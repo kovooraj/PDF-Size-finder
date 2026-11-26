@@ -168,8 +168,21 @@ def classify(geo: PageGeometry, media: Rect) -> Classified:
                 continue
             if not _looks_like_die_colour(key[0], key[1]):
                 continue
-            if best is None or area > best[0]:
-                best = (area, key, ps)
+            # dielines are mostly straight lines; decorative dashed doodles are curves
+            curve_len = sum(s.length for p in ps for s in p.segments if s.curve)
+            if total_len and curve_len / total_len > 0.35:
+                continue
+            # A dieline has structure inside its outline (panel, gusset, fold lines); a bleed or
+            # safety line is just a rectangle. Prefer structure, then a pure colour, then area.
+            w, h = bb[2] - bb[0], bb[3] - bb[1]
+            interior = sum(
+                1 for p in ps for s in p.segments
+                if (s.orientation() == "h" and bb[1] + 3 < s.y0 < bb[3] - 3 and s.length >= 0.3 * w)
+                or (s.orientation() == "v" and bb[0] + 3 < s.x0 < bb[2] - 3 and s.length >= 0.3 * h)
+            )
+            rank = (interior > 0, _looks_like_pure_colour(key[0], key[1]), area)
+            if best is None or rank > best[0]:
+                best = (rank, key, ps)
         if best is not None:
             _, key, ps = best
             for p in ps:
@@ -184,8 +197,8 @@ def classify(geo: PageGeometry, media: Rect) -> Classified:
     return c
 
 
-def _looks_like_die_colour(cs: str, color: tuple[float, ...]) -> bool:
-    """Dielines drawn without a spot colour are usually a single saturated process colour."""
+def _looks_like_pure_colour(cs: str, color: tuple[float, ...]) -> bool:
+    """Every channel at an extreme, e.g. 100% magenta or RGB red: the classic dieline swatch."""
     if cs == "DeviceCMYK" and len(color) == 4:
         strong = [v for v in color if v >= 0.8]
         weak = [v for v in color if v <= 0.2]
@@ -195,6 +208,22 @@ def _looks_like_die_colour(cs: str, color: tuple[float, ...]) -> bool:
         lo = [v for v in color if v <= 0.2]
         return len(hi) in (1, 2) and len(hi) + len(lo) == 3
     return False
+
+
+def _looks_like_die_colour(cs: str, color: tuple[float, ...]) -> bool:
+    """Dielines drawn without a spot colour (or converted to process, e.g. PANTONE 306 C
+    → RGB cyan) are a clearly saturated colour: not black, white or grey."""
+    if cs == "DeviceCMYK" and len(color) == 4:
+        c, m, y, k = color
+        if k >= 0.6:
+            return False
+        rgb = ((1 - c) * (1 - k), (1 - m) * (1 - k), (1 - y) * (1 - k))
+    elif cs == "DeviceRGB" and len(color) == 3:
+        rgb = tuple(color)
+    else:
+        return False
+    hi, lo = max(rgb), min(rgb)
+    return hi >= 0.45 and (hi - lo) / hi >= 0.6
 
 
 def _near_edge(s: Segment, media: Rect, band: float = 0.22) -> bool:

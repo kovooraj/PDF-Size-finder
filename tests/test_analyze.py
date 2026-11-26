@@ -238,3 +238,29 @@ def test_pouch_without_gusset_asks_for_it():
 def test_pouch_with_folds_does_not_ask():
     assert run(samples.standup_pouch(), "pouch")["pages"][0]["result"]["prompt"] is None
     assert run(samples.layflat_sheet(), "commercial")["pages"][0]["result"]["prompt"] is None
+
+
+def test_stacked_pouch_with_converted_rgb_dieline_is_found_without_text():
+    # Mirrors a PANTONE dieline converted to RGB with outlined text (e.g. Bassé Brazil Nuts 1 kg).
+    r = run(samples.stacked_pouch_rgb())
+    res = r["pages"][0]["result"]
+    assert res["product_type"] == "pouch"
+    f = fields(r)
+    assert (f["width"], f["height"], f["gusset"]) == pytest.approx((7.68, 11.42, 1.97), abs=0.01)
+    assert any("centre fold" in n for n in res["notes"])
+
+
+def test_carton_is_still_a_carton_and_pouch_still_a_pouch():
+    assert run(samples.rte_carton())["pages"][0]["result"]["product_type"] == "folding_carton"
+    assert run(samples.standup_pouch())["pages"][0]["result"]["product_type"] == "pouch"
+
+
+def test_carton_with_scores_in_cut_colour_and_aligned_slits():
+    # Mirrors a converter dieline (e.g. Sprague 8-can carton): scores drawn solid in the cut
+    # colour, a Crease swatch only in a legend, and tuck slits that line up top and bottom.
+    r = run(samples.carton_scores_in_cut_colour())
+    res = r["pages"][0]["result"]
+    assert res["product_type"] == "folding_carton"
+    f = fields(r)
+    assert (f["length"], f["width"], f["depth"]) == pytest.approx((6.0, 4.6, 11.8), abs=0.01)
+    assert res["panels"]["glue_flap_in"] == pytest.approx(0.48, abs=0.01)

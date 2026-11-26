@@ -161,23 +161,28 @@ def whitespace_report(f: PageFacts, trim: Rect) -> dict | None:
 # --------------------------------------------------------------------------- fold-line helpers
 
 def _fold_segments(f: PageFacts) -> tuple[list[Segment], str]:
+    """Straight lines that can be score / fold lines: every crease line plus every interior
+    cut-colour line. Many dielines draw the score lines in the same colour (or layer) as the
+    cut, and a 'Crease' swatch may only appear in a legend, so trusting the crease colour
+    alone misses the panels. Short slits and legend swatches drop out later because panel
+    lines must span the body."""
     c = f.classified
-    segs = [s for p in c.crease for s in p.segments if s.orientation() in ("h", "v") and s.length > 2]
-    if segs:
-        return segs, "crease/fold lines"
-    # No separate crease colour: interior straight cut-colour lines are usually folds.
+    crease = [s for p in c.crease for s in p.segments if s.orientation() in ("h", "v") and s.length > 2]
     outer = union_bbox(c.cut)
-    if not outer:
-        return [], "none"
     inner = []
-    for p in c.cut:
-        for s in p.segments:
-            o = s.orientation()
-            if o == "v" and outer[0] + 3 < s.x0 < outer[2] - 3 and s.length > 18:
-                inner.append(s)
-            elif o == "h" and outer[1] + 3 < s.y0 < outer[3] - 3 and s.length > 18:
-                inner.append(s)
-    return inner, "interior dieline lines (no separate crease colour - verify)"
+    if outer:
+        for p in c.cut:
+            for s in p.segments:
+                o = s.orientation()
+                if o == "v" and outer[0] + 3 < s.x0 < outer[2] - 3 and s.length > 18:
+                    inner.append(s)
+                elif o == "h" and outer[1] + 3 < s.y0 < outer[3] - 3 and s.length > 18:
+                    inner.append(s)
+    if crease and not inner:
+        return crease, "crease/fold lines"
+    if inner and not crease:
+        return inner, "interior dieline lines (no separate crease colour; verify)"
+    return crease + inner, "dieline score and fold lines"
 
 
 def _clusters(segs: list[Segment], orient: str, tol: float = 1.5):
@@ -233,6 +238,104 @@ def _tr(r: Rect) -> Rect:
     return (r[1], r[0], r[3], r[2])
 
 
+def _interior_lines(f: PageFacts) -> list[Segment]:
+    """Every straight dieline line (cut or crease, solid or dashed). Pouch dielines often draw
+    the panel / gusset edges solid and only the gusset centre (or zipper) dashed."""
+    c = f.classified
+    return [s for p in c.crease + c.cut for s in p.segments if s.orientation() in ("h", "v") and s.length > 2]
+
+
+def _pouch_layout(f: PageFacts) -> dict | None:
+    """Front | bottom gusset | back on one sheet, stacked or side by side.
+
+    Looks for two interior lines b1 < b2 across the sheet with front (edge -> b1) ~ back
+    (b2 -> edge) and a smaller gusset between them; a centre fold inside the gusset is a
+    strong confirming sign. Without a gusset pair, a single centre line means a lay-flat
+    pouch folded at the bottom."""
+    flat = union_bbox(f.classified.cut)
+    if not flat:
+        return None
+    segs = _interior_lines(f)
+    best = None
+    fold = None
+    for transposed in (False, True):
+        ss = [_transpose(sg) for sg in segs] if transposed else segs
+        fl = _tr(flat) if transposed else flat
+        across = fl[2] - fl[0]
+        lo, hi = fl[1], fl[3]
+        pos = [cl[0] for cl in _clusters(ss, "h")
+               if (cl[3] - cl[2]) >= 0.5 * across and cl[1] >= 0.5 * across and lo + 3 < cl[0] < hi - 3]
+        for i, b1 in enumerate(pos):
+            for b2 in pos[i + 1:]:
+                front, back, g = (b1 - lo) / PT_PER_IN, (hi - b2) / PT_PER_IN, (b2 - b1) / PT_PER_IN
+                if g < 0.25 or g >= 0.9 * min(front, back) or not _close(front, back):
+                    continue
+                mid = (b1 + b2) / 2
+                centre = any(abs(q - mid) <= max(1.5, 0.03 * (b2 - b1)) for q in pos if b1 < q < b2)
+                score = (2.0 if centre else 0.0) - abs(front - back) / max(front, back)
+                if best is None or score > best["score"]:
+                    best = {"kind": "gusset", "transposed": transposed, "bounds": [lo, b1, b2, hi], "fl": fl,
+                            "height": (front + back) / 2, "gusset": g, "across": across / PT_PER_IN,
+                            "centre": centre, "score": score}
+        mid = (lo + hi) / 2
+        for q in pos:
+            if fold is None and abs(q - mid) <= max(1.5, 0.01 * (hi - lo)):
+                fold = {"kind": "fold", "transposed": transposed, "bounds": [lo, q, hi], "fl": fl,
+                        "height": (q - lo) / PT_PER_IN, "across": across / PT_PER_IN, "score": -1.0}
+    return best or fold
+
+
+def _outline_is_rectangular(f: PageFacts) -> bool:
+    """Pouch, label and print outlines fill their bounding box; a carton's flaps don't."""
+    flat = union_bbox(f.classified.cut)
+    if not flat:
+        return False
+    tol = 1.5
+    on_edge = 0.0
+    for p in f.classified.cut:
+        for sg in p.segments:
+            o = sg.orientation()
+            if o == "h" and (abs(sg.y0 - flat[1]) <= tol or abs(sg.y0 - flat[3]) <= tol):
+                on_edge += sg.length
+            elif o == "v" and (abs(sg.x0 - flat[0]) <= tol or abs(sg.x0 - flat[2]) <= tol):
+                on_edge += sg.length
+    perimeter = 2 * ((flat[2] - flat[0]) + (flat[3] - flat[1]))
+    return perimeter > 0 and on_edge / perimeter >= 0.85
+
+
+def _find_carton_body(f: PageFacts) -> dict | None:
+    """Four alternating body panels L, W, L, W between score lines, plus the depth."""
+    c = f.classified
+    flat = union_bbox(c.cut + c.crease)
+    if not flat:
+        return None
+    segs, fold_src = _fold_segments(f)
+    found = None
+    for transposed in (False, True):
+        ss = [_transpose(sg) for sg in segs] if transposed else segs
+        fl = _tr(flat) if transposed else flat
+        fh = fl[3] - fl[1]
+        # a panel line needs real length: aligned tuck-flap slits at the top and bottom of the
+        # sheet span the height but add up to almost nothing
+        vcl = [cl for cl in _clusters(ss, "v") if (cl[3] - cl[2]) >= 0.2 * fh and cl[1] >= 0.2 * fh]
+        bounds = sorted({fl[0], *[cl[0] for cl in vcl], fl[2]})
+        alt = _alternating_panels(bounds)
+        if not alt:
+            continue
+        i, a, b, gaps = alt
+        body_x0, body_x1 = bounds[i], bounds[i + 4]
+        hcl = [cl for cl in _clusters(ss, "h")
+               if min(cl[3], body_x1) - max(cl[2], body_x0) >= 0.4 * (body_x1 - body_x0)]
+        hcl.sort(key=lambda cl: -cl[1])
+        depth = abs(hcl[0][0] - hcl[1][0]) / PT_PER_IN if len(hcl) >= 2 else None
+        cand = (a + b) * 2
+        if found is None or cand > found["score"]:
+            found = {"score": cand, "a": a, "b": b, "depth": depth, "gaps": gaps, "i": i,
+                     "transposed": transposed, "bounds": bounds, "fl": fl, "fold_src": fold_src,
+                     "depth_at": (hcl[0][0], hcl[1][0]) if len(hcl) >= 2 else None}
+    return found
+
+
 # --------------------------------------------------------------------------- products
 
 def folding_carton(f: PageFacts, res: DimResult):
@@ -253,31 +356,8 @@ def folding_carton(f: PageFacts, res: DimResult):
     res.fields["flat_height"] = Field(_h(flat), src, conf)
     _ann_rect(res, flat, "flat_width", "flat_height", primary=False)
 
-    segs, fold_src = _fold_segments(f)
-    found = None
-    for transposed in (False, True):
-        ss = [_transpose(s) for s in segs] if transposed else segs
-        fl = _tr(flat) if transposed else flat
-        fh = fl[3] - fl[1]
-        fw = fl[2] - fl[0]
-        vcl = [cl for cl in _clusters(ss, "v") if (cl[3] - cl[2]) >= 0.2 * fh]
-        bounds = sorted({fl[0], *[cl[0] for cl in vcl], fl[2]})
-        alt = _alternating_panels(bounds)
-        if not alt:
-            continue
-        i, a, b, gaps = alt
-        body_x0, body_x1 = bounds[i], bounds[i + 4]
-        hcl = [cl for cl in _clusters(ss, "h")
-               if min(cl[3], body_x1) - max(cl[2], body_x0) >= 0.4 * (body_x1 - body_x0)]
-        hcl.sort(key=lambda cl: -cl[1])
-        depth = None
-        if len(hcl) >= 2:
-            depth = abs(hcl[0][0] - hcl[1][0]) / PT_PER_IN
-        cand = (a + b) * 2
-        if found is None or cand > found["score"]:
-            found = {"score": cand, "a": a, "b": b, "depth": depth, "gaps": gaps, "i": i,
-                     "transposed": transposed, "bounds": bounds, "fl": fl,
-                     "depth_at": (hcl[0][0], hcl[1][0]) if len(hcl) >= 2 else None}
+    found = _find_carton_body(f)
+    fold_src = found["fold_src"] if found else ""
     if not found:
         res.warnings.append("Could not find the 4 alternating body panels (L, W, L, W) in the fold lines. "
                             "This may be a tray, sleeve, mailer or a multi-up layout; flat size is reliable, "
@@ -285,7 +365,7 @@ def folding_carton(f: PageFacts, res: DimResult):
         res.questions.append("What carton style is this (reverse tuck end, straight tuck end, auto-bottom, tray, sleeve)?")
         return
     L, W = max(found["a"], found["b"]), min(found["a"], found["b"])
-    fconf = "high" if fold_src == "crease/fold lines" and c.dieline_source == "spot" else "medium"
+    fconf = "high" if fold_src in ("crease/fold lines", "dieline score and fold lines") and c.dieline_source == "spot" else "medium"
     res.fields["length"] = Field(L, f"body panel width ({fold_src})", fconf)
     res.fields["width"] = Field(W, f"body panel width ({fold_src})", fconf)
     if found["depth"]:
@@ -320,7 +400,8 @@ def pouch(f: PageFacts, res: DimResult):
     fw, fh = _w(flat), _h(flat)
 
     # Side-gusset pouch: front | gusset | back | gusset
-    vcl = [cl for cl in _clusters(segs, "v") if (cl[3] - cl[2]) >= 0.5 * (flat[3] - flat[1])]
+    vcl = [cl for cl in _clusters(segs, "v")
+           if (cl[3] - cl[2]) >= 0.5 * (flat[3] - flat[1]) and cl[1] >= 0.5 * (flat[3] - flat[1])]
     sg_bounds = sorted({flat[0], *[cl[0] for cl in vcl], flat[2]})
     alt = _alternating_panels(sg_bounds) if vcl else None
     if alt:
@@ -333,43 +414,29 @@ def pouch(f: PageFacts, res: DimResult):
         res.fields["gusset"] = Field(min(a, b), f"side gusset panel ({fold_src})", "medium")
         res.notes.append("Layout looks like a side-gusset pouch (front / gusset / back / gusset).")
     else:
-        # Front | bottom gusset | back on one sheet. Print Monkey's setup guide lays it out
-        # sideways (2 x H + G wide, W tall); other suppliers stack it. Try both.
-        layout = None
-        for transposed in (False, True):
-            ss = [_transpose(s) for s in segs] if transposed else segs
-            fl = _tr(flat) if transposed else flat
-            hcl = [cl for cl in _clusters(ss, "h") if (cl[3] - cl[2]) >= 0.5 * (fl[2] - fl[0])]
-            bounds = sorted({fl[1], *[cl[0] for cl in hcl], fl[3]})
-            gaps = [(bounds[k + 1] - bounds[k]) / PT_PER_IN for k in range(len(bounds) - 1)]
-            across = (fl[2] - fl[0]) / PT_PER_IN
-            if len(gaps) >= 3 and _close(gaps[0], gaps[-1]) and sum(gaps[1:-1]) < gaps[0]:
-                layout = ("gusset", gaps, across, transposed, bounds, fl)
-                break
-            if len(gaps) == 2 and _close(gaps[0], gaps[1]) and layout is None:
-                layout = ("fold", gaps, across, transposed, bounds, fl)
+        # Front | bottom gusset | back on one sheet, side by side (Print Monkey's setup guide)
+        # or stacked. Panel edges are often solid and only the gusset centre dashed.
+        layout = _pouch_layout(f)
+        src = "dieline panel and gusset lines"
         if layout:
-            # panels are separated along v (y, or x when transposed): H then G along the right edge,
-            # W across the top, the whole flat sheet along the left.
-            _, _g, _a, tp, bnd, fl = layout
+            tp, bnd, fl = layout["transposed"], layout["bounds"], layout["fl"]
             res.ann("height", (fl[2], bnd[0]), (fl[2], bnd[1]), "right", transposed=tp)
-            if layout[0] == "gusset":
-                res.ann("gusset", (fl[2], bnd[1]), (fl[2], bnd[-2]), "right", transposed=tp)
+            if layout["kind"] == "gusset":
+                res.ann("gusset", (fl[2], bnd[1]), (fl[2], bnd[2]), "right", transposed=tp)
             res.ann("width", (fl[0], fl[3]), (fl[2], fl[3]), "top", transposed=tp)
             res.ann("flat", (fl[0], fl[1]), (fl[0], fl[3]), "left", primary=False, transposed=tp,
                     value_in=(fl[3] - fl[1]) / PT_PER_IN, label="Flat")
-        if layout and layout[0] == "gusset":
-            _, gaps, across, transposed, _b, _f = layout
-            way = "side by side" if transposed else "stacked"
-            res.fields["width"] = Field(across, "dieline, across the panels", "medium")
-            res.fields["height"] = Field(gaps[0], f"front/back panel ({fold_src})", "medium")
-            res.fields["gusset"] = Field(sum(gaps[1:-1]), f"bottom gusset between panels ({fold_src})", "medium")
-            res.notes.append(f"Layout looks like front panel / bottom gusset / back panel ({way}). "
-                             "Gusset is the full unfolded depth.")
-        elif layout and layout[0] == "fold":
-            _, gaps, across, _t, _b, _f = layout
-            res.fields["width"] = Field(across, "dieline, across the panels", "medium")
-            res.fields["height"] = Field(gaps[0], "half of folded layout", "medium")
+        if layout and layout["kind"] == "gusset":
+            way = "side by side" if layout["transposed"] else "stacked"
+            res.fields["width"] = Field(layout["across"], "dieline, across the panels", "medium")
+            res.fields["height"] = Field(layout["height"], f"front/back panel ({src})", "medium")
+            res.fields["gusset"] = Field(layout["gusset"], f"bottom gusset between the panels ({src})", "medium")
+            res.notes.append(f"Layout looks like front panel / bottom gusset / back panel ({way})"
+                             + ("; the gusset has a centre fold" if layout.get("centre") else "")
+                             + ". The gusset is the full unfolded depth.")
+        elif layout and layout["kind"] == "fold":
+            res.fields["width"] = Field(layout["across"], "dieline, across the panels", "medium")
+            res.fields["height"] = Field(layout["height"], "half of the folded layout", "medium")
             res.notes.append("Single centre fold and no gusset found: front and back on one sheet, folded at the bottom.")
         else:
             res.fields["width"] = Field(_w(trim), tsrc, tconf)
@@ -473,8 +540,24 @@ def guess_product(f: PageFacts) -> str:
         return "pouch"
     if CARTON_WORDS.search(f.text):
         return "folding_carton"
-    if c.crease and c.cut:
-        return "folding_carton"
+    if c.cut:
+        # Shape first: a symmetric front / gusset / back layout is a pouch; four alternating
+        # body panels inside a flap-shaped (non-rectangular) outline is a carton.
+        layout = _pouch_layout(f)
+        rectangular = _outline_is_rectangular(f)
+        if layout and layout["kind"] == "gusset":
+            return "pouch"
+        if not rectangular and _find_carton_body(f):
+            return "folding_carton"
+        if layout and rectangular:
+            return "pouch"
+        body = None if layout else _find_carton_body(f)
+        if body and abs(body["a"] - body["b"]) > 0.05 * max(body["a"], body["b"]):
+            # A full-rectangle die (flaps as wide as the panels) is still a carton when the
+            # body shows two different alternating panel widths and nothing looks like a pouch.
+            return "folding_carton"
+        if c.crease and not rectangular:
+            return "folding_carton"
     names = " ".join(c.dieline_names)
     if LABEL_WORDS.search(f.text) or re.search(r"contour|kiss", names, re.I):
         return "roll_label"
