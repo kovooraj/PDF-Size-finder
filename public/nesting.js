@@ -261,6 +261,8 @@
     const turned = best.rows.some((q) => q.k !== best.kA);
     // Rows closer together than the die's own height (plus gutter): flaps sit between the next row's flaps.
     const interlocked = best.rows.length > 1 && best.rows[1].y - best.rows[0].y < best.h0 + 2 * r - 1;
+    // Copies in a row closer than the die's own width: flaps tuck into the neighbour's notch.
+    const sideBySide = best.px < best.w0 + 2 * r - 1;
     const shifted = best.mode === "same" && best.sx > 0 && best.rows.length > 1;
     return {
       ups: placements.length,
@@ -268,7 +270,9 @@
       rows: best.rows.length,
       pieceW: best.w0 / RES,
       pieceH: best.h0 / RES,
-      layout: turned ? "head-to-tail (every other row turned 180°)" : shifted ? "staggered rows" : interlocked ? "interlocking rows (flaps tuck between rows)" : "straight rows",
+      layout: turned ? "head-to-tail (every other row turned 180°)" : shifted ? "staggered rows" : interlocked && sideBySide ? "interlocking (flaps tuck in both directions)"
+        : interlocked ? "interlocking rows (flaps tuck between rows)"
+        : sideBySide ? "interlocking side by side (flaps tuck into the next die)" : "straight rows",
       turned90: best.kA === 1,
     };
   }
