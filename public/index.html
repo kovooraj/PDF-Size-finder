@@ -10,6 +10,7 @@
   --accent:#2457e6;--accent-ink:#ffffff;--accent-soft:#e9effd;
   --ok:#17803d;--ok-soft:#e5f4ea;--warn:#a45d00;--warn-soft:#fdf3e1;--bad:#c4262e;--bad-soft:#fdeceb;--info-soft:#eef3fd;
   --cut:#e5484d;--crease:#f08c00;--trim:#16a34a;--art:#8b5cf6;--marks:#64748b;--dim:#2457e6;--dim-2:#55595f;
+  --flat:#0d8f86;--flat-soft:#e3f5f3;
   --stage:#ecebe7;--check:#e2e1dc;
   --shadow:0 1px 2px rgba(20,20,20,.04),0 4px 16px rgba(20,20,20,.05);
   --r:14px;
@@ -18,14 +19,14 @@
   --bg:#111113;--panel:#1a1a1d;--panel-2:#202024;--ink:#ededef;--ink-2:#c9c9ce;--muted:#9a9aa2;--line:#2d2d32;--line-2:#3a3a40;
   --accent:#5b86ff;--accent-ink:#0b0b0c;--accent-soft:#1d2540;
   --ok:#4cc673;--ok-soft:#15281c;--warn:#e6a23c;--warn-soft:#2c2414;--bad:#ff6b6f;--bad-soft:#331a1b;--info-soft:#1a2236;
-  --dim:#6f95ff;--dim-2:#a3a6ad;--stage:#0c0c0e;--check:#18181b;
+  --dim:#6f95ff;--dim-2:#a3a6ad;--stage:#0c0c0e;--check:#18181b;--flat:#2cc4b8;--flat-soft:#10302d;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.25);
 }}
 :root[data-theme="dark"]{
   --bg:#111113;--panel:#1a1a1d;--panel-2:#202024;--ink:#ededef;--ink-2:#c9c9ce;--muted:#9a9aa2;--line:#2d2d32;--line-2:#3a3a40;
   --accent:#5b86ff;--accent-ink:#0b0b0c;--accent-soft:#1d2540;
   --ok:#4cc673;--ok-soft:#15281c;--warn:#e6a23c;--warn-soft:#2c2414;--bad:#ff6b6f;--bad-soft:#331a1b;--info-soft:#1a2236;
-  --dim:#6f95ff;--dim-2:#a3a6ad;--stage:#0c0c0e;--check:#18181b;
+  --dim:#6f95ff;--dim-2:#a3a6ad;--stage:#0c0c0e;--check:#18181b;--flat:#2cc4b8;--flat-soft:#10302d;
 }
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -145,7 +146,12 @@ main{min-width:0;display:grid;gap:16px}
 .conf{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:99px;margin-top:4px}
 .conf::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
 .conf.high{color:var(--ok);background:var(--ok-soft)}.conf.medium{color:var(--warn);background:var(--warn-soft)}.conf.low{color:var(--bad);background:var(--bad-soft)}
-.flatline{margin-top:12px;font-size:13.5px;color:var(--ink-2)}
+.tile.flat{grid-column:span 2;border-color:color-mix(in srgb,var(--flat) 45%,var(--line));background:var(--flat-soft);position:relative}
+.tile.flat:hover,.tile.flat.hot{border-color:var(--flat);box-shadow:inset 0 0 0 1px var(--flat)}
+.tile.flat .k em{color:var(--flat);background:color-mix(in srgb,var(--flat) 14%,transparent)}
+.tile.flat .v .x{font-weight:500;color:var(--muted);margin:0 6px;font-size:24px}
+.tile.flat .copyflat{position:absolute;top:10px;right:10px}
+@media (max-width:520px){.tile.flat{grid-column:1/-1}.tile.flat .v{font-size:26px}}
 .quote{margin-top:14px;display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:11px;background:var(--panel-2);border:1px solid var(--line)}
 .quote span{flex:1;font-weight:550}
 .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:6px 11px;cursor:pointer;font-size:13px;font-weight:550;white-space:nowrap}
@@ -190,6 +196,8 @@ main{min-width:0;display:grid;gap:16px}
 .D .tag{font-weight:800;opacity:.85}
 .D g.sec .ext,.D g.sec .ln{stroke:var(--dim-2)}
 .D g.sec .pillbg{fill:var(--dim-2)}
+.D g.flatdim .ext,.D g.flatdim .ln{stroke:var(--flat)}
+.D g.flatdim .pillbg{fill:var(--flat)}
 .D g.hot .ln{stroke-width:2.6}
 .D g.hot .pillbg{filter:drop-shadow(0 0 0 #000)}
 .D g.dim{transition:opacity .12s}
@@ -547,7 +555,8 @@ function makeCanvas(host, page, opts = {}){
       const n = {top:[0,-1], bottom:[0,1], left:[-1,0], right:[1,0]}[a.side] || [0,-1];
       const off = 26 + (a.lane || 0)*30 + (a.primary ? 0 : 4);
       const ax = x1 + n[0]*off, ay = y1 + n[1]*off, bx = x2 + n[0]*off, by = y2 + n[1]*off;
-      const g = el("g", {class: "dim" + (a.primary ? "" : " sec"), "data-key": a.key}, dims);
+      const isFlat = /^flat/.test(a.key);
+      const g = el("g", {class: "dim" + (isFlat ? " flatdim" : a.primary ? "" : " sec"), "data-key": a.key}, dims);
       el("path", {class:"ext", d:`M${x1+n[0]*4} ${y1+n[1]*4}L${ax+n[0]*6} ${ay+n[1]*6}M${x2+n[0]*4} ${y2+n[1]*4}L${bx+n[0]*6} ${by+n[1]*6}`}, g);
       el("path", {class:"halo", d:`M${ax} ${ay}L${bx} ${by}`}, g);
       // dimension line with arrowheads drawn as paths (no <marker>, so colours follow CSS)
@@ -601,8 +610,9 @@ function makeCanvas(host, page, opts = {}){
     return k;
   }
   function highlight(key){
-    dims.classList.toggle("focus", !!key);
-    dims.querySelectorAll("g.dim").forEach(g => g.classList.toggle("hot", g.dataset.key === key));
+    const keys = key ? key.split(" ") : [];
+    dims.classList.toggle("focus", keys.length > 0);
+    dims.querySelectorAll("g.dim").forEach(g => g.classList.toggle("hot", keys.includes(g.dataset.key)));
   }
   for (const L of LAYERS) svg.classList.toggle("off-" + L.k, !layers[L.k]);
   return {cv, svg, setScale, fitTo, fit, autoPad, pad, get k(){ return k; }, applyLayers, highlight, redraw: () => setScale(k)};
@@ -613,9 +623,20 @@ let inline = null, inlineRO = null;
 function mainKeys(res){ return (ORDER[res.product_type] || Object.keys(res.fields)).filter(k => res.fields[k]); }
 function summaryLine(page){
   const res = page.result, ai = page.ai_review;
-  if (ai && !ai.error && ai.summary_for_sales) return ai.summary_for_sales;
+  const fl = flatSize(res), flatTxt = fl ? ` · Flat ${fmt(fl.w)} × ${fmt(fl.h)}` : "";
+  if (ai && !ai.error && ai.summary_for_sales) return ai.summary_for_sales + (fl && !/flat/i.test(ai.summary_for_sales) ? flatTxt : "");
   const ks = mainKeys(res);
-  return `${TYPE_NAME[res.product_type]}, ` + ks.map(k => `${fmt(res.fields[k].value_in)} ${LABEL[k]}`).join(" × ");
+  return `${TYPE_NAME[res.product_type]}, ` + ks.map(k => `${fmt(res.fields[k].value_in)} ${LABEL[k]}`).join(" × ") + flatTxt;
+}
+// Flat (unfolded) size: cartons have flat_width/flat_height; pouches have a flat sheet annotation x width.
+function flatSize(res){
+  if (res.fields.flat_width && res.fields.flat_height)
+    return {w: res.fields.flat_width.value_in, h: res.fields.flat_height.value_in, conf: res.fields.flat_width.confidence,
+            keys: "flat_width flat_height", label: "unfolded"};
+  const fa = (res.annotations || []).find(a => a.key === "flat");
+  if (fa && res.fields.width)
+    return {w: fa.value_in, h: res.fields.width.value_in, conf: res.fields.width.confidence, keys: "flat width", label: "sheet"};
+  return null;
 }
 function chipsHTML(){
   return LAYERS.map(L => `<button type="button" class="chip c-${L.k}" data-layer="${L.k}" aria-pressed="${!!layers[L.k]}"><i></i>${L.name}</button>`).join("");
@@ -638,11 +659,18 @@ function renderResult(){
   const page = data.pages[pageIdx], res = page.result, ai = page.ai_review || null;
   const keys = mainKeys(res);
   const src = data.source || {};
-  const flat = res.fields.flat_width ? `${fmt(res.fields.flat_width.value_in)} × ${fmt(res.fields.flat_height.value_in)}` : null;
-  const flatAnn = (res.annotations || []).find(a => a.key === "flat");
+  const flat = flatSize(res);
   const pages = data.pages.length > 1 ? `<div class="tabsmini" role="tablist">${data.pages.map((p, i) => `<button role="tab" aria-selected="${i===pageIdx}" data-page="${i}">Page ${p.page}</button>`).join("")}</div>` : "";
 
-  const tiles = keys.map(k => {
+  const flatTile = flat ? (() => {
+    const a = valParts(flat.w), b = valParts(flat.h);
+    return `<div class="tile flat" data-key="${flat.keys}"><span class="k">Flat size <em>${flat.label}</em></span>
+      <span class="v num">${a.main}<small>${a.unit.trim()}</small><span class="x">×</span>${b.main}<small>${b.unit.trim()}</small></span>
+      <span class="f num">${unit === "mm" ? `${trimNum(flat.w, 3)}″ × ${trimNum(flat.h, 3)}″` : `${trimNum(flat.w*25.4, 1)} × ${trimNum(flat.h*25.4, 1)} mm`}</span>
+      <span class="conf ${flat.conf}" title="${flat.conf} confidence">${flat.conf[0].toUpperCase() + flat.conf.slice(1)}</span>
+      <button class="btn copyflat" id="copyflat" title="Copy flat size"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>Copy</button></div>`;
+  })() : "";
+  const tiles = flatTile + keys.map(k => {
     const f = res.fields[k], p = valParts(f.value_in);
     return `<div class="tile" data-key="${k}"><span class="k">${LABEL[k]} <em>${LETTER[k]}</em></span>
       <span class="v num">${p.main}<small>${p.unit.trim()}</small></span><span class="f num">${esc(p.alt)}</span>
@@ -669,7 +697,6 @@ function renderResult(){
         <div class="seg" role="group" aria-label="Units"><button data-u="in" aria-pressed="${unit==="in"}">in</button><button data-u="mm" aria-pressed="${unit==="mm"}">mm</button></div>
       </div>
       <div class="tiles">${tiles}</div>
-      ${flat ? `<div class="flatline">Flat (unfolded): <b class="num">${flat}</b></div>` : flatAnn ? `<div class="flatline">Flat sheet: <b class="num">${fmt(flatAnn.value_in)}</b> × <b class="num">${fmt(res.fields.width ? res.fields.width.value_in : null)}</b></div>` : ""}
       <div class="quote"><span id="salesline">${esc(summaryLine(page))}</span>
         <button class="btn" id="copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>Copy</button></div>
     </section>
@@ -721,6 +748,9 @@ function renderResult(){
   });
   document.querySelectorAll(".seg button[data-u]").forEach(b => b.onclick = () => { unit = b.dataset.u; store.set("dimUnit", unit); renderResult(); });
   document.querySelectorAll("[data-page]").forEach(b => b.onclick = () => { pageIdx = +b.dataset.page; renderResult(); });
+  if ($("#copyflat")) $("#copyflat").onclick = async () => {
+    try { await navigator.clipboard.writeText(`${fmt(flat.w)} × ${fmt(flat.h)}`); $("#copyflat").lastChild.textContent = "Copied"; setTimeout(() => $("#copyflat") && ($("#copyflat").lastChild.textContent = "Copy"), 1500); } catch {}
+  };
   $("#copy").onclick = async () => { try { await navigator.clipboard.writeText($("#salesline").textContent); $("#copy").lastChild.textContent = "Copied"; setTimeout(() => $("#copy") && ($("#copy").lastChild.textContent = "Copy"), 1500); } catch {} };
   document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { detailTab = b.dataset.tab; document.querySelectorAll("[data-tab]").forEach(x => x.setAttribute("aria-selected", x === b)); renderTab(); });
   renderTab();
@@ -771,7 +801,8 @@ function openViewer(){
   $("#viewer").hidden = false; document.body.style.overflow = "hidden";
   $("#vTitle").textContent = `${file ? file.name : "Artwork"}`;
   $("#vPages").innerHTML = data.pages.length > 1 ? data.pages.map((p, i) => `<button role="tab" aria-selected="${i===pageIdx}" data-vpage="${i}">Page ${p.page}</button>`).join("") : "";
-  $("#vTiles").innerHTML = mainKeys(res).map(k => `<span class="vtile" data-key="${k}"><em>${LETTER[k]}</em><span class="num">${fmt(res.fields[k].value_in)}</span></span>`).join("");
+  const vf = flatSize(res);
+  $("#vTiles").innerHTML = (vf ? `<span class="vtile" data-key="${vf.keys}"><em style="color:var(--flat)">Flat</em><span class="num">${fmt(vf.w)} × ${fmt(vf.h)}</span></span>` : "") + mainKeys(res).map(k => `<span class="vtile" data-key="${k}"><em>${LETTER[k]}</em><span class="num">${fmt(res.fields[k].value_in)}</span></span>`).join("");
   $("#vChips").innerHTML = chipsHTML();
   vStage.querySelectorAll(".cv").forEach(n => n.remove());
   viewerCanvas = makeCanvas(vStage, page, {onLayout: () => viewerCanvas && (viewerCanvas.autoPad(), viewerCanvas.redraw(), centerViewer())});
