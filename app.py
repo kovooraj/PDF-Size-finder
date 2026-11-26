@@ -22,12 +22,14 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 
-from artwork_dims import storage
+from artwork_dims import intake, storage
 from artwork_dims.analyze import analyze
 from artwork_dims.dimensions import PRODUCT_TYPES
 
-MAX_BYTES = 50 * 1024 * 1024        # same limit as the website upload page
-DIRECT_LIMIT = 4 * 1024 * 1024      # above this the page uses the storage hand-off (Vercel body limit)
+MAX_BYTES = int(float(os.environ.get("ARTWORK_DIMS_MAX_MB", "1024")) * 1024 * 1024)
+# Above this the page sends the file to storage first. Vercel Functions take ~4.5 MB per request;
+# on a host without that limit (local, Railway, Fly) raise it, e.g. ARTWORK_DIMS_DIRECT_LIMIT_MB=1024.
+DIRECT_LIMIT = int(float(os.environ.get("ARTWORK_DIMS_DIRECT_LIMIT_MB", "4")) * 1024 * 1024)
 PAGE = Path(__file__).parent / "public" / "index.html"
 
 app = FastAPI(title="Artwork Dimension Finder")
@@ -65,8 +67,8 @@ def config():
 def upload_url(authorization: str | None = Header(default=None)):
     _auth(authorization)
     if not storage.enabled():
-        raise HTTPException(413, "Files over 4 MB need large uploads switched on (Supabase storage). "
-                                 "Ask your admin, or upload a smaller PDF (the dieline page only).")
+        raise HTTPException(413, f"Files over {DIRECT_LIMIT // (1024 * 1024)} MB need large uploads switched on "
+                                 "(Supabase storage). Ask your admin, or upload a smaller PDF (the dieline page only).")
     try:
         return storage.signed_upload()
     except Exception as e:
@@ -82,27 +84,42 @@ async def analyze_endpoint(
     authorization: str | None = Header(default=None),
 ):
     _auth(authorization)
-    if file is not None:
-        data = await file.read(MAX_BYTES + 1)
-    elif storage_path and storage.enabled():
-        try:
-            data = await run_in_threadpool(storage.download, storage_path, MAX_BYTES)
-        except ValueError as e:
-            raise HTTPException(413 if "large" in str(e) else 400, str(e))
-        except Exception as e:
-            raise HTTPException(502, f"Couldn't fetch the uploaded file ({type(e).__name__}).")
-        finally:
-            await run_in_threadpool(storage.delete, storage_path)
-    else:
-        raise HTTPException(400, "No file received.")
-    if len(data) > MAX_BYTES:
-        raise HTTPException(413, "File is larger than 50 MB.")
-    # Check the real header, not just the extension (the website only checks the extension).
-    if b"%PDF-" not in data[:1024]:
-        raise HTTPException(415, "That file isn't a PDF. Export the artwork as a PDF and try again.")
+    try:
+        if file is not None:
+            f = file.file
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            if size > MAX_BYTES:
+                raise HTTPException(413, f"File is larger than {MAX_BYTES // (1024 * 1024)} MB.")
+            data, source = await run_in_threadpool(intake.from_fileobj, f, size)
+        elif storage_path and storage.enabled():
+            try:
+                data, source = await run_in_threadpool(
+                    intake.from_url, storage.object_url(storage_path), storage.auth_headers(), MAX_BYTES)
+            finally:
+                await run_in_threadpool(storage.delete, storage_path)
+        else:
+            raise HTTPException(400, "No file received.")
+    except HTTPException:
+        raise
+    except ValueError as e:
+        if str(e) == "not-a-pdf":
+            raise HTTPException(415, "That file isn't a PDF. Export the artwork as a PDF and try again.")
+        if str(e) == "too-large":
+            raise HTTPException(413, f"File is larger than {MAX_BYTES // (1024 * 1024)} MB.")
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        msg = str(e).lower()
+        if "password" in msg or "encrypt" in msg:
+            raise HTTPException(422, "This PDF is password-protected. Ask for an unlocked copy.")
+        raise HTTPException(422, f"This PDF couldn't be read ({type(e).__name__}). It may be damaged.")
     pt = product_type if product_type in PRODUCT_TYPES else None
     try:
-        return await run_in_threadpool(analyze, data, pt, use_ai)
+        result = await run_in_threadpool(analyze, data, pt, use_ai)
+        result["source"] = source
+        if source.get("reduced"):
+            result["page_count"] = source.get("source_pages", result["page_count"])
+        return result
     except Exception as e:
         msg = str(e).lower()
         if "password" in msg or "encrypt" in msg:

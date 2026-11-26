@@ -70,6 +70,8 @@ details pre{white-space:pre-wrap;word-break:break-word;background:var(--chip);pa
 h3{font-size:14px;margin:18px 0 4px}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:s .8s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes s{to{transform:rotate(360deg)}}
+.bar{height:6px;background:var(--chip);border-radius:99px;margin:14px auto 0;max-width:360px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);transition:width .2s}
 </style>
 </head>
 <body>
@@ -81,7 +83,7 @@ h3{font-size:14px;margin:18px 0 4px}
   <section class="card" aria-label="Upload">
     <label class="drop" id="drop" for="file">
       <strong>Drop a PDF here</strong>
-      <span>or click to choose · up to 50 MB</span>
+      <span id="limit">or click to choose · up to 1 GB</span>
     </label>
     <input type="file" id="file" accept="application/pdf,.pdf">
     <div class="fname" id="fname"></div>
@@ -108,7 +110,7 @@ h3{font-size:14px;margin:18px 0 4px}
 
 <script>
 const $ = s => document.querySelector(s);
-let file = null, ptype = "auto", unit = "in", data = null, pageIdx = 0, cfg = {direct_limit_bytes: 4*1024*1024, max_bytes: 50*1024*1024};
+let file = null, ptype = "auto", unit = "in", data = null, pageIdx = 0, cfg = {direct_limit_bytes: 4*1024*1024, max_bytes: 1024*1024*1024};
 try { unit = localStorage.getItem("dimUnit") || "in"; } catch {}
 // Access key: read once from ?key=..., remember it, and strip it from the address bar.
 let accessKey = "";
@@ -120,28 +122,9 @@ try {
 const authHeaders = () => accessKey ? {Authorization: "Bearer " + accessKey} : {};
 fetch("/api/config").then(r => r.json()).then(c => {
   cfg = c;
+  const mb = c.max_bytes/1048576; $("#limit").textContent = "or click to choose · up to " + (mb >= 1024 ? (mb/1024).toFixed(mb % 1024 ? 1 : 0) + " GB" : mb + " MB");
   if (!c.ai) { const ai = $("#ai"); ai.checked = false; ai.disabled = true; ai.parentElement.title = "AI review isn't set up on this server (no API key)."; ai.parentElement.style.opacity = .6; }
 }).catch(() => {});
-
-async function sendFile(f) {
-  const fd = new FormData(); fd.append("product_type", ptype); fd.append("use_ai", $("#ai").checked);
-  if (f.size > cfg.max_bytes) throw new Error("File is larger than 50 MB.");
-  if (f.size > cfg.direct_limit_bytes) {
-    // Too big for a direct request on Vercel: upload to storage with a one-time signed URL.
-    const r1 = await fetch("/api/upload-url", {method: "POST", headers: authHeaders()});
-    const j1 = await r1.json();
-    if (!r1.ok) throw new Error(j1.detail || "Couldn't prepare the upload.");
-    const r2 = await fetch(j1.upload_url, {method: "PUT", headers: {"Content-Type": "application/pdf", "x-upsert": "false"}, body: f});
-    if (!r2.ok) throw new Error("Upload to storage failed (" + r2.status + ").");
-    fd.append("storage_path", j1.path);
-  } else {
-    fd.append("file", f);
-  }
-  const r = await fetch("/api/analyze", {method: "POST", body: fd, headers: authHeaders()});
-  let j; try { j = await r.json(); } catch { throw new Error(r.status === 413 ? "File is too large for a direct upload." : "The server returned an error (" + r.status + ")."); }
-  if (!r.ok) throw new Error(j.detail || "Something went wrong.");
-  return j;
-}
 
 const LABEL = {width:"Width",height:"Height",gusset:"Gusset",length:"Length",depth:"Depth",flat_width:"Flat width",flat_height:"Flat height"};
 const TYPE = {pouch:"Pouch",folding_carton:"Folding carton",roll_label:"Roll label",commercial:"Commercial print"};
@@ -164,6 +147,51 @@ function toFrac(v){
 }
 const short = v => v==null ? "?" : unit==="mm" ? (v*25.4).toFixed(1) : String(Math.round(v*1000)/1000);
 
+const sizeText = n => n >= 1073741824 ? (n/1073741824).toFixed(2) + " GB" : (n/1048576).toFixed(n < 10485760 ? 1 : 0) + " MB";
+function status(msg, pct){
+  $("#out").innerHTML = `<div class="empty"><span class="spin"></span>${esc(msg)}${pct != null ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ""}</div>`;
+}
+// PUT with upload progress (fetch can't report upload progress).
+function putWithProgress(url, body, onProgress){
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("PUT", url);
+    x.setRequestHeader("Content-Type", "application/pdf");
+    x.setRequestHeader("x-upsert", "false");
+    x.upload.onprogress = e => e.lengthComputable && onProgress(e.loaded, e.total);
+    x.onload = () => x.status < 300 ? resolve() : reject(new Error(
+      x.status === 413 ? "Storage rejected the file as too large. Raise the file size limit in Supabase (Storage settings and the bucket)." :
+      "Upload to storage failed (" + x.status + "): " + (x.responseText || "").slice(0, 200)));
+    x.onerror = () => reject(new Error("Upload interrupted. Check the connection and try again."));
+    x.send(body);
+  });
+}
+async function sendFile(f) {
+  const fd = new FormData(); fd.append("product_type", ptype); fd.append("use_ai", $("#ai").checked);
+  if (f.size > cfg.max_bytes) throw new Error("File is larger than " + sizeText(cfg.max_bytes) + ".");
+  if (f.size > cfg.direct_limit_bytes) {
+    // Too big for a direct request on Vercel: upload straight to storage with a one-time signed URL.
+    status("Preparing upload…");
+    const r1 = await fetch("/api/upload-url", {method: "POST", headers: authHeaders()});
+    const j1 = await r1.json();
+    if (!r1.ok) throw new Error(j1.detail || "Couldn't prepare the upload.");
+    const t0 = Date.now();
+    await putWithProgress(j1.upload_url, f, (done, total) => {
+      const secs = (Date.now() - t0) / 1000, rate = done / Math.max(secs, 0.5);
+      const left = rate > 0 ? Math.round((total - done) / rate) : 0;
+      status(`Uploading ${sizeText(done)} of ${sizeText(total)}${secs > 3 && left > 0 ? ` · about ${left > 90 ? Math.round(left/60) + " min" : left + " s"} left` : ""}`, Math.round(100 * done / total));
+    });
+    status($("#ai").checked ? "Measuring and reviewing…" : "Measuring…");
+    fd.append("storage_path", j1.path);
+  } else {
+    fd.append("file", f);
+  }
+  const r = await fetch("/api/analyze", {method: "POST", body: fd, headers: authHeaders()});
+  let j; try { j = await r.json(); } catch { throw new Error(r.status === 413 ? "File is too large for a direct upload." : r.status === 504 ? "The server took too long. Try again without AI review." : "The server returned an error (" + r.status + ")."); }
+  if (!r.ok) throw new Error(j.detail || "Something went wrong.");
+  return j;
+}
+
 function setFile(f){
   file = f; $("#fname").textContent = f ? f.name : ""; $("#go").disabled = !f;
 }
@@ -182,7 +210,7 @@ $("#go").addEventListener("click", async () => {
   if (!file) return;
   const go = $("#go"); go.disabled = true;
   go.innerHTML = `<span class="spin"></span>${$("#ai").checked ? "Measuring and reviewing…" : "Measuring…"}`;
-  $("#out").innerHTML = `<div class="empty"><span class="spin"></span>Reading ${esc(file.name)}…</div>`;
+  status(`Reading ${file.name} (${sizeText(file.size)})…`);
   try {
     data = await sendFile(file); pageIdx = 0; render();
   } catch (err) {
@@ -203,7 +231,9 @@ function render(){
     const m = res.fields[d.name]; const diff = m && Math.abs(m.value_in - d.value_in) > Math.max(0.04, 0.03*m.value_in);
     return `<tr><td>${LABEL[d.name]||d.name}</td><td class="num"${diff?' style="color:var(--bad)"':""}>${fmt(d.value_in)}</td><td>${esc(d.source)}</td><td><span class="conf ${d.confidence}">${d.confidence}</span></td></tr>`;
   }).join("") : "";
-  const alerts = [
+  const src = data.source || {};
+  const reducedNote = src.reduced ? `<div class="alert n">Large file (${sizeText(src.size_bytes)}): measured from a reduced copy of the first pages. ${src.images_replaced ? `${src.images_replaced} large image${src.images_replaced === 1 ? "" : "s"} (${sizeText(src.image_bytes_skipped)}) shown as grey boxes; they don't affect the size.` : ""}${src.fetched_bytes ? ` Read ${sizeText(src.fetched_bytes)} of the file.` : ""}</div>` : "";
+  const alerts = [reducedNote,
     ...(ai && ai.error ? [`<div class="alert err">${esc(ai.error)}</div>`] : []),
     ...(ai && !ai.error && !ai.agrees_with_measurement ? ai.disagreements.map(d => `<div class="alert err"><b>AI disagrees:</b> ${esc(d)}</div>`) : []),
     ...res.warnings.map(w => `<div class="alert">${esc(w)}</div>`),

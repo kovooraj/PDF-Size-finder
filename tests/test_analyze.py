@@ -153,3 +153,74 @@ def test_real_pouch_template():
     for i in range(len(r["pages"])):
         f = fields(r, i)
         assert (f["width"], f["height"], f["gusset"]) == pytest.approx((6.0, 8.0, 2.0), abs=0.01)
+
+
+# ---------------------------------------------------------------- large files
+
+def test_lite_copy_gives_same_dimensions():
+    from artwork_dims.lite import make_lite
+    for name, fn in samples.ALL.items():
+        full = run(fn())
+        lite, info = make_lite(__import__("io").BytesIO(fn()))
+        assert fields(run(lite)) == fields(full), name
+
+
+def test_big_images_are_replaced(tmp_path):
+    import io as _io
+    import pikepdf
+    from artwork_dims.intake import from_fileobj
+    from artwork_dims.lite import KEEP_IMAGE_BYTES
+    pdf = pikepdf.open(_io.BytesIO(samples.business_card()))
+    pg = pdf.pages[0]
+    # random bytes: incompressible, so the stored stream really is over the threshold
+    big = pdf.make_stream(__import__("os").urandom(KEEP_IMAGE_BYTES + 1000), Type=pikepdf.Name.XObject, Subtype=pikepdf.Name.Image,
+                          Width=1000, Height=(KEEP_IMAGE_BYTES + 1000) // 1000, ColorSpace=pikepdf.Name.DeviceGray,
+                          BitsPerComponent=8)
+    pg.obj.Resources.XObject = pikepdf.Dictionary(Im0=big)
+    pg.contents_add(pdf.make_stream(b"q 100 0 0 50 40 40 cm /Im0 Do Q"))
+    pg.obj.PieceInfo = pikepdf.Dictionary(Illustrator=pikepdf.Dictionary(Private=pdf.make_stream(b"x" * 100000)))
+    path = tmp_path / "big.pdf"
+    pdf.save(path)
+    with open(path, "rb") as f:
+        data, info = from_fileobj(f, KEEP_IMAGE_BYTES * 100)  # pretend it's huge to force the reduced copy
+    assert info["reduced"] and info["images_replaced"] == 1
+    assert len(data) < 50_000
+    assert fields(run(data)) == {"width": 3.5, "height": 2.0}
+
+
+def test_range_file_reads_little(tmp_path):
+    import threading
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+    from artwork_dims.remote import HTTPRangeFile
+
+    class RangeHandler(SimpleHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            import re as _re
+            p = tmp_path / self.path.lstrip("/")
+            data = p.read_bytes()
+            m = _re.match(r"bytes=(\d+)-(\d*)", self.headers.get("Range", ""))
+            a, b = int(m.group(1)), min(int(m.group(2) or len(data) - 1), len(data) - 1)
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {a}-{b}/{len(data)}")
+            self.send_header("Content-Length", str(b - a + 1))
+            self.end_headers()
+            self.wfile.write(data[a:b + 1])
+
+    blob = bytes(range(256)) * 120000  # ~30 MB
+    (tmp_path / "f.bin").write_bytes(blob)
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), partial(RangeHandler, directory=str(tmp_path)))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        f = HTTPRangeFile(f"http://127.0.0.1:{srv.server_port}/f.bin")
+        assert f.size == len(blob)
+        f.seek(len(blob) - 100)
+        assert f.read(100) == blob[-100:]
+        f.seek(12345)
+        assert f.read(10) == blob[12345:12355]
+        assert f.bytes_fetched < len(blob)
+    finally:
+        srv.shutdown()

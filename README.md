@@ -58,11 +58,24 @@ python -m pytest -q
 
 3. Redeploy after adding variables.
 
-**Large files.** A Vercel Function accepts about 4.5 MB per request. Dieline-only PDFs are usually far smaller,
-but print-ready artwork with photos often isn't. For files over 4 MB the page asks the server for a one-time
-signed upload URL, sends the PDF straight to Supabase Storage, and the server reads it from there and deletes it
-when done. To switch it on, create a **private** bucket named `dimension-finder` in your Supabase project and set
-`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`. The service key stays on the server.
+**Large files (up to 1 GB).** A Vercel Function accepts only about 4.5 MB per request, so bigger files go
+straight from the browser to Supabase Storage (one-time signed upload URL, with a progress bar). The server
+never downloads the whole file. It opens it with HTTP range reads and builds a small *measurement copy*: big
+images become grey placeholders in the same position, and Illustrator's private editing data (`/PieceInfo`,
+often half the file) is dropped. Vector paths, spot colours, layers, text and fonts are kept, so the result is
+the same. A 400 MB test file needed 13 MB of reads and under a second. The upload is deleted after analysis,
+and unanalysed uploads older than 24 hours are cleaned up.
+
+Setup (Supabase project `cjubwgebqlvdufqjbhnm`):
+1. The private bucket `dimension-finder` (PDF only, 1 GB per file) already exists.
+2. **Storage → Settings → Global file size limit:** raise it to 1 GB (on Pro it defaults to 50 MB, and the lower
+   of the global and bucket limits wins).
+3. In Vercel, add `SUPABASE_URL=https://cjubwgebqlvdufqjbhnm.supabase.co` and `SUPABASE_SERVICE_ROLE_KEY`
+   (Project Settings → API Keys → a secret key `sb_secret_…`, or the legacy `service_role` key). Redeploy.
+
+Limits: `ARTWORK_DIMS_MAX_MB` (default 1024), `ARTWORK_DIMS_DIRECT_LIMIT_MB` (default 4; on a host without
+Vercel's body limit you can raise it and skip storage), `ARTWORK_DIMS_LITE_MB` (default 25: files above this are
+measured from the reduced copy).
 
 `vercel.json` sets a 120 s time limit (AI review usually takes 15–60 s) and 2 GB memory for rendering.
 PyMuPDF is pinned to 1.x because 2.x pulls in onnxruntime, which would push the function toward Vercel's size limit.
@@ -83,6 +96,7 @@ Next.js app posts the PDF to `/api/analyze`. Possible follow-ups:
 
 ## Known limits
 - Only the first 4 pages are measured, and only the first 2 get an AI review.
+- Very large files are measured from the first 4 pages; their big images appear as grey boxes in the preview and to the AI.
 - Raster-only PDFs (a flat scan) have no vector dieline. The size then comes from the page or the visible pixels.
 - Multi-up sheets: labels report one label; cartons and pouches on a gang sheet need the AI review or a manual check.
 - Carton panels are measured on the score lines; allow for board caliper.
