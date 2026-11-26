@@ -172,9 +172,11 @@ main{min-width:0;display:grid;gap:16px}
 .tabsmini{display:flex;gap:4px}
 .tabsmini button{border:1px solid transparent;background:none;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer;color:var(--muted);font-weight:550}
 .tabsmini button[aria-selected=true]{border-color:var(--line-2);color:var(--ink);background:var(--panel-2)}
-.stage{position:relative;isolation:isolate;height:min(62vh,600px);min-height:320px;background:var(--stage);overflow:hidden;cursor:zoom-in}
+.stage{position:relative;isolation:isolate;height:min(62vh,600px);min-height:320px;background:#fff;overflow:hidden;cursor:zoom-in}
+/* The preview is always on white, whatever the page theme, so overlay colours use their light values there. */
+.stage,.vstage{--dim:#2457e6;--dim-2:#55595f;--flat:#0d8f86;--cut:#e5484d;--crease:#f08c00;--trim:#16a34a;--art:#8b5cf6;--marks:#64748b;color-scheme:light}
 .stage .cv{position:absolute}
-.cv img{position:absolute;display:block;box-shadow:0 2px 14px rgba(0,0,0,.18);background:#fff;user-select:none;-webkit-user-drag:none}
+.cv img{position:absolute;display:block;outline:1px solid #cfcfca;box-shadow:0 1px 8px rgba(0,0,0,.08);background:#fff;user-select:none;-webkit-user-drag:none}
 .cv svg{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
 .expand-hint{position:absolute;right:12px;bottom:12px;display:inline-flex;align-items:center;gap:6px;background:rgba(17,17,19,.78);color:#fff;font-size:12.5px;padding:6px 10px;border-radius:9px;pointer-events:none}
 .expand-hint svg{width:14px;height:14px}
@@ -203,7 +205,6 @@ main{min-width:0;display:grid;gap:16px}
 .D g.dim{transition:opacity .12s}
 .D.focus g.dim:not(.hot){opacity:.25}
 
-.viewer .D .halo{stroke:#000;opacity:.35}
 @media (max-width:980px){.how{display:none}}
 @media (max-width:600px){
   .tile .v{font-size:26px}
@@ -253,13 +254,13 @@ pre.raw{white-space:pre-wrap;word-break:break-word;background:var(--panel-2);bor
 .vbtn:hover{background:#26262b}
 .vbtn svg{width:17px;height:17px}
 .zoomval{min-width:58px;text-align:center;font-size:13px;color:#b9b9c0}
-.vstage{flex:1;overflow:auto;cursor:grab;position:relative;background:#18181b;touch-action:none}
+.vstage{flex:1;overflow:auto;cursor:grab;position:relative;background:#fff;touch-action:none}
 .vstage.dragging{cursor:grabbing}
 .vstage .cv{position:relative;margin:0 auto}
 .vtiles{display:flex;gap:8px;flex-wrap:wrap}
 .vtile{display:inline-flex;gap:6px;align-items:baseline;padding:5px 10px;border-radius:9px;background:#1b1b1f;border:1px solid #2c2c32;font-size:13px}
 .vtile em{font-style:normal;font-weight:800;color:#8fb0ff}
-.vhelp{position:absolute;left:14px;bottom:14px;font-size:12px;color:#8a8a92;background:rgba(20,20,23,.85);padding:6px 10px;border-radius:8px;pointer-events:none}
+.vhelp{position:fixed;left:14px;bottom:14px;font-size:12px;color:#d6d6da;background:rgba(20,20,23,.85);padding:6px 10px;border-radius:8px;pointer-events:none}
 @media (max-width:700px){.vbar .chips{order:5;width:100%}.vbar .title{max-width:50vw}.vtiles{display:none}}
 </style>
 </head>
