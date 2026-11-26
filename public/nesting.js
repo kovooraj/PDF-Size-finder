@@ -363,8 +363,13 @@
   // ------------------------------------------------------------------ web (roll) layouts
 
   /** Lanes across the usable web and repeat along it, for both orientations; best first. */
-  function nestWeb(itemW, itemH, s) {
-    const opts = [[itemW, itemH, false], [itemH, itemW, true]].map(([across, around, turned]) => {
+  /**
+   * opts.fixed: only the given orientation (itemW across the web). Pouches use it: they must run
+   * horizontally (long side along the web) so the converter can seal and glue them.
+   */
+  function nestWeb(itemW, itemH, s, o = {}) {
+    const orients = o.fixed ? [[itemW, itemH, false]] : [[itemW, itemH, false], [itemH, itemW, true]];
+    const opts = orients.map(([across, around, turned]) => {
       const lanes = across > s.usable + 1e-9 ? 0 : Math.floor((s.usable + s.gapAcross + 1e-9) / (across + s.gapAcross));
       const repeat = around + s.gapAround;
       const used = lanes ? lanes * across + (lanes - 1) * s.gapAcross : 0;
@@ -372,7 +377,11 @@
         across, around, turned, lanes, repeat, usedWidth: used,
         perFoot: lanes ? (lanes * 12) / repeat : 0,
         perMeter: lanes ? (lanes * 39.3701) / repeat : 0,
-        utilisation: lanes ? used / s.usable : 0,
+        utilisation: lanes ? used / s.usable : 0,           // of the max usable width
+        webUtilisation: lanes ? used / s.web : 0,            // of the full web
+        unused: lanes ? s.usable - used : s.usable,          // usable width left over
+        // printed area / web area per repeat (gaps between lanes and along the web count as waste)
+        areaUtilisation: lanes ? (lanes * across * around) / (s.web * repeat) : 0,
       };
     });
     opts.sort((a, b) => b.perFoot - a.perFoot || b.lanes - a.lanes);

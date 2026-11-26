@@ -60,3 +60,14 @@ test("web lanes: 12in usable label web", () => {
   const pouch = N.nestWeb(6, 18, N.DEFAULTS.web.pouch);
   assert.ok(pouch.every(o => o.usedWidth <= 29));
 });
+
+test("pouches: one horizontal layout and web utilisation", () => {
+  const out = N.nestWeb(8.662, 24.802, N.DEFAULTS.web.pouch, { fixed: true });
+  assert.strictEqual(out.length, 1);
+  const o = out[0];
+  assert.strictEqual(o.lanes, 3); // 3 x 8.662 + 2 x 0.25 = 26.486
+  assert.ok(Math.abs(o.usedWidth - 26.486) < 1e-6);
+  assert.ok(Math.abs(o.utilisation - 26.486 / 29) < 1e-9);
+  assert.ok(Math.abs(o.webUtilisation - 26.486 / 30) < 1e-9);
+  assert.ok(Math.abs(o.unused - (29 - 26.486)) < 1e-9);
+});
