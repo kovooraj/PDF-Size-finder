@@ -1069,8 +1069,8 @@ function sheetHTML(item, out, cfg){
       <span class="sub">${r.ups ? esc(r.layout) + (r.turned90 ? " · turned 90°" : "") : "Doesn't fit on this sheet"}</span>
       ${r.ups ? `<span class="sub num">${Math.round(r.utilisation*100)}% of the sheet used</span>` : ""}
       ${r.ups > r.straightUps ? `<span class="gain num">+${r.ups - r.straightUps} vs straight rows (${r.straightUps} up)</span>` : ""}
-      ${r.tighterGutter ? `<span class="sub num" style="color:var(--warn)">${r.tighterGutter.ups} up with a 1/16″ gutter</span>` : ""}
-      ${r.otherFeed ? `<span class="sub num" style="color:var(--warn)">${r.otherFeed.ups} up if the gripper is on the ${trimNum(r.otherFeed.gripperEdge, 4)}″ edge</span>` : ""}
+      ${r.tighterGutter ? `<span class="sub num">${r.tighterGutter.ups} up with a 1/16″ gutter</span>` : ""}
+      ${r.feedSwitched ? `<span class="sub num" style="color:var(--warn)">Gripper on the ${trimNum(r.gripperEdge, 4)}″ edge (${r.feedSwitched.defaultUps} up on the ${trimNum(r.feedSwitched.defaultEdge, 4)}″ edge)</span>` : ""}
     </button>`).join("");
   const r = out[sel], g = cfg.gutter[item.gutterKey];
   const notes = [
@@ -1118,7 +1118,7 @@ function sheetSVG(item, r){
       <rect x="0" y="0" width="${s.side}" height="${s.h}" fill="url(#hatch)"/><rect x="${s.w - s.side}" y="0" width="${s.side}" height="${s.h}" fill="url(#hatch)"/>
       <rect x="${ux}" y="${uy}" width="${r.usable.w}" height="${r.usable.h}" fill="none" stroke="#16a34a" stroke-width="1" stroke-dasharray="6 4" vector-effect="non-scaling-stroke"/>
       ${uses}
-      <text x="${s.w/2}" y="${-pad*.35}" font-size="${fs}" text-anchor="middle" fill="#3d4046" font-family="system-ui,sans-serif" font-weight="600">${trimNum(s.w, 4)}″ · gripper edge</text>
+      <text x="${s.w/2}" y="${-pad*.35}" font-size="${fs}" text-anchor="middle" fill="#3d4046" font-family="system-ui,sans-serif" font-weight="600">${trimNum(s.w, 4)}″ · gripper edge${r.feedSwitched ? " (fed short edge first)" : ""}</text>
       <text x="${-pad*.35}" y="${s.h/2}" font-size="${fs}" text-anchor="middle" fill="#3d4046" font-family="system-ui,sans-serif" font-weight="600" transform="rotate(-90 ${-pad*.35} ${s.h/2})">${trimNum(s.h, 4)}″</text>
     </svg>
     <figcaption class="cap"><span><i style="background:#e9effd;border:1px solid #e5484d"></i>${item.die.source === "dieline" && r.outline === "dieline" ? "Die (outline from the file)" : "Piece"}</span><span><i style="border:1px dashed #16a34a"></i>Usable area</span><span><i style="background:repeating-linear-gradient(45deg,#c9c7c0 0 2px,#fff 2px 5px)"></i>Gripper ${fmt(s.gripper)} · tail ${fmt(s.tail)} · sides ${fmt(s.side)}</span><span class="num">${r.ups} up · ${Math.round(r.utilisation*100)}% used</span></figcaption></figure>`;
