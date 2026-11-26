@@ -261,6 +261,12 @@ pre.raw{white-space:pre-wrap;word-break:break-word;background:var(--panel-2);bor
 .ncard .ups{font-size:30px;font-weight:750;letter-spacing:-.02em;line-height:1.15}
 .ncard .ups small{font-size:15px;font-weight:600;color:var(--ink-2);margin-left:4px}
 .ncard .sub{font-size:12.5px;color:var(--muted);line-height:1.35}
+.unwind{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.unwind .lbl{font-size:12.5px;font-weight:600;color:var(--ink-2)}
+.unwind .seg{flex-wrap:wrap}
+.unwind .uwb{display:inline-flex;align-items:center;gap:5px;padding:6px 11px}
+.unwind .uwb small{font-size:10.5px;color:var(--muted);font-weight:600}
+.unwind .uwb[aria-pressed=true]{color:var(--accent)}
 .ncard .util{font-size:16px;font-weight:700;color:var(--ok);margin:4px 0 2px}
 .ncard .gain{font-size:12px;font-weight:650;color:var(--ok)}
 .ncard.best .nm::after{content:"Most ups";margin-left:auto;font-size:10.5px;font-weight:700;color:var(--ok);background:var(--ok-soft);border-radius:99px;padding:1px 7px}
@@ -1018,7 +1024,15 @@ function nestItem(page){
     if (fl && pw ? Math.abs(a - pw) < Math.abs(b - pw) : false) [a, b] = [b, a];
     return {kind: "web", w: a, h: b, webKey: "pouch", flat: !!fl, fixed: true};
   }
-  if (res.product_type === "roll_label") return F("width") && F("height") ? {kind: "web", w: F("width"), h: F("height"), webKey: "roll_label"} : null;
+  if (res.product_type === "roll_label") {
+    const W = F("width"), H = F("height"), uw = String(nestCfg().web.roll_label.unwind || "best");
+    if (!W || !H) return null;
+    // Unwind 1/2: top or bottom comes off first, so the label width runs across the web.
+    // Unwind 3/4: a side comes off first, so the label height runs across the web.
+    if (uw === "1" || uw === "2") return {kind: "web", w: W, h: H, webKey: "roll_label", fixed: true, unwind: uw};
+    if (uw === "3" || uw === "4") return {kind: "web", w: H, h: W, webKey: "roll_label", fixed: true, unwind: uw};
+    return {kind: "web", w: W, h: H, webKey: "roll_label", unwind: "best"};
+  }
   return null;
 }
 
@@ -1109,12 +1123,35 @@ function sheetSVG(item, r){
     <figcaption class="cap"><span><i style="background:#e9effd;border:1px solid #e5484d"></i>${item.die.source === "dieline" && r.outline === "dieline" ? "Die (outline from the file)" : "Piece"}</span><span><i style="border:1px dashed #16a34a"></i>Usable area</span><span><i style="background:repeating-linear-gradient(45deg,#c9c7c0 0 2px,#fff 2px 5px)"></i>Gripper ${fmt(s.gripper)} · tail ${fmt(s.tail)} · sides ${fmt(s.side)}</span><span class="num">${r.ups} up · ${Math.round(r.utilisation*100)}% used</span></figcaption></figure>`;
 }
 
+// Arrow = which edge of the label comes off the roll first (unwind #1-#4).
+const ARROW = deg => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(${deg}deg)"><path d="M12 19V5M6 11l6-6 6 6"/></svg>`;
+const UNWINDS = [
+  ["best", "Compare", "Show both ways the label can run", ""],
+  ["1", "Top", "Unwind #1: top of the label comes off the roll first (label width across the web)", ARROW(0)],
+  ["2", "Bottom", "Unwind #2: bottom comes off first (label width across the web)", ARROW(180)],
+  ["3", "Right", "Unwind #3: right side comes off first (label height across the web)", ARROW(90)],
+  ["4", "Left", "Unwind #4: left side comes off first (label height across the web)", ARROW(-90)],
+];
+function webCardName(item, o){
+  if (item.webKey === "pouch") return "Height + gusset across the web";
+  if (item.webKey === "roll_label") {
+    if (item.unwind !== "best") return `Unwind #${item.unwind} · ${+item.unwind <= 2 ? "width" : "height"} across the web`;
+    return o.turned ? "Side first (#3 / #4) · height across" : "Top / bottom first (#1 / #2) · width across";
+  }
+  return o.turned ? "Turned 90°" : "As drawn";
+}
+// Which way the top of the label points in the drawing (web travels to the right).
+function labelTop(item, o){
+  if (item.webKey !== "roll_label") return null;
+  const u = item.unwind === "best" ? (o.turned ? "3" : "1") : item.unwind;
+  return {"1": 0, "2": 180, "3": -90, "4": 90}[u];
+}
 const pct = v => (v*100).toFixed(1).replace(/\.0$/, "") + "%";
 function webHTML(item, out, cfg){
   const w = cfg.web[item.webKey], noun = item.webKey === "pouch" ? "pouch" : "label";
   const sel = Math.min(nestPick[item.webKey] ?? 0, out.length - 1);
   const cards = out.map((o, i) => `<button type="button" class="ncard${i === 0 && o.lanes && out.length > 1 ? " best" : ""}" data-n="${i}" aria-pressed="${i === sel}">
-      <span class="nm">${item.fixed ? "Height + gusset across the web" : o.turned ? "Turned 90°" : "As drawn"}</span>
+      <span class="nm">${webCardName(item, o)}</span>
       <span class="ups num">${o.lanes}<small>${o.lanes === 1 ? "lane" : "lanes"}</small></span>
       <span class="sub num">${fmt(o.across)} across · repeat ${fmt(o.repeat)}</span>
       ${o.lanes ? `<span class="util num">${pct(o.utilisation)} web utilisation</span>
@@ -1128,18 +1165,27 @@ function webHTML(item, out, cfg){
     item.webKey === "pouch" ? `Pouches run with the height and gusset across the web so they can be sealed and glued: the ${fmt(item.w)} ${item.flat ? "flat length (front, gusset and back)" : "height"} goes across the web and the ${fmt(item.h)} pouch width runs along it.` : "",
     item.webKey === "pouch" && !item.flat ? "The flat sheet wasn't found, so the width across uses the pouch height only (no gusset). Check it." : "",
     "Web utilisation = printed width of all lanes (with the gaps between them) ÷ the max usable width.",
-    item.webKey === "roll_label" ? "Check the customer's unwind direction: it decides which way the label runs on the roll." : "",
+    item.webKey === "roll_label" ? (item.unwind === "best" ? "Pick the customer's unwind direction above: it fixes which way the label runs and so how many lanes fit." :
+      `Unwind #${item.unwind}: the label ${+item.unwind <= 2 ? "width" : "height"} (${fmt(item.w)}) runs across the web. Wound-in rolls #${+item.unwind + 4} lay out the same way.`) : "",
     "Planning estimate. Prepress confirms lanes, repeat and the die.",
   ].filter(Boolean);
-  return `<div class="nest-cards">${cards}</div>${o && o.lanes ? webSVG(o, w, noun) : ""}<ul class="nest-notes">${notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>`;
+  const unwindBar = item.webKey === "roll_label" ? `<div class="unwind"><span class="lbl">Unwind: which edge comes off the roll first</span>
+      <div class="seg" role="group" aria-label="Unwind direction">${UNWINDS.map(([v, n, h, ic]) => `<button type="button" class="uwb" data-uw="${v}" aria-pressed="${String(item.unwind) === v}" title="${h}" aria-label="${h}">${ic}<span>${n}</span>${v !== "best" ? `<small>#${v}</small>` : ""}</button>`).join("")}</div></div>` : "";
+  return `${unwindBar}<div class="nest-cards">${cards}</div>${o && o.lanes ? webSVG(o, w, noun, labelTop(item, o)) : ""}<ul class="nest-notes">${notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>`;
 }
 
-function webSVG(o, w, noun){
+function webSVG(o, w, noun, topAngle){
   const reps = Math.max(3, Math.ceil(Math.max(w.web * 1.3, 24) / o.repeat)), L = reps * o.repeat;
   const margin = (w.web - w.usable) / 2, y0 = margin + (w.usable - o.usedWidth) / 2;
   let items = "";
-  for (let j = 0; j < o.lanes; j++) for (let i = 0; i < reps; i++)
-    items += `<rect x="${i * o.repeat + w.gapAround/2}" y="${y0 + j * (o.across + w.gapAcross)}" width="${o.around}" height="${o.across}" fill="#e9effd" stroke="#e5484d" stroke-width="1.2" vector-effect="non-scaling-stroke" rx="${noun === "label" ? Math.min(o.around, o.across) * .06 : 0}"/>`;
+  for (let j = 0; j < o.lanes; j++) for (let i = 0; i < reps; i++) {
+    const x = i * o.repeat + w.gapAround/2, y = y0 + j * (o.across + w.gapAcross);
+    items += `<rect x="${x}" y="${y}" width="${o.around}" height="${o.across}" fill="#e9effd" stroke="#e5484d" stroke-width="1.2" vector-effect="non-scaling-stroke" rx="${noun === "label" ? Math.min(o.around, o.across) * .06 : 0}"/>`;
+    if (topAngle != null) { // arrow pointing at the top of the label artwork
+      const cx = x + o.around/2, cy = y + o.across/2, s = Math.min(o.around, o.across) * .2;
+      items += `<g transform="rotate(${topAngle} ${cx} ${cy})"><path d="M${cx + s} ${cy}L${cx - s*.6} ${cy - s*.75}L${cx - s*.6} ${cy + s*.75}Z" fill="#2457e6"/><text x="${cx - s*1.15}" y="${cy}" font-size="${s*.7}" fill="#2457e6" font-family="system-ui,sans-serif" font-weight="700" text-anchor="middle" dominant-baseline="central" transform="rotate(90 ${cx - s*1.15} ${cy})">TOP</text></g>`;
+    }
+  }
   const pad = Math.max(L, w.web) * 0.05, fs = Math.max(L, w.web) * 0.024;
   return `<figure class="nest-fig" style="margin:0"><svg viewBox="${-pad*2.2} ${-pad} ${L + pad*3.2} ${w.web + pad*2.2}" role="img" aria-label="${o.lanes} lanes on a ${w.web} inch web">
       <defs><pattern id="whatch" width="${fs*.6}" height="${fs*.6}" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="${fs*.6}" stroke="#c9c7c0" stroke-width="${fs*.12}"/></pattern></defs>
@@ -1150,7 +1196,7 @@ function webSVG(o, w, noun){
       <text x="${-pad*.9}" y="${w.web/2}" font-size="${fs}" text-anchor="middle" fill="#3d4046" font-family="system-ui,sans-serif" font-weight="600" transform="rotate(-90 ${-pad*.9} ${w.web/2})">${trimNum(w.web, 3)}″ web · ${trimNum(w.usable, 3)}″ usable</text>
       <text x="${L/2}" y="${w.web + pad*.75}" font-size="${fs}" text-anchor="middle" fill="#3d4046" font-family="system-ui,sans-serif" font-weight="600">Web direction →  repeat ${trimNum(o.repeat, 3)}″</text>
     </svg>
-    <figcaption class="cap"><span><i style="background:#e9effd;border:1px solid #e5484d"></i>${noun[0].toUpperCase() + noun.slice(1)}</span><span><i style="border:1px dashed #16a34a"></i>Usable width</span><span class="num">${o.lanes} ${o.lanes === 1 ? "lane" : "lanes"} · ${trimNum(o.perFoot, 2)} per foot</span></figcaption></figure>`;
+    <figcaption class="cap"><span><i style="background:#e9effd;border:1px solid #e5484d"></i>${noun[0].toUpperCase() + noun.slice(1)}</span><span><i style="border:1px dashed #16a34a"></i>Usable width</span>${topAngle != null ? `<span><i style="background:#2457e6;clip-path:polygon(0 0,100% 50%,0 100%)"></i>Points to the top of the label</span>` : ""}<span class="num">${o.lanes} ${o.lanes === 1 ? "lane" : "lanes"} · ${trimNum(o.perFoot, 2)} per foot</span></figcaption></figure>`;
 }
 
 function nestCfgHTML(item, cfg){
@@ -1176,6 +1222,9 @@ function nestCfgHTML(item, cfg){
 
 function saveNestCfg(cfg){ store.set(NEST_KEY, cfg); nestCache.clear(); }
 function wireNest(item, out, cfg){
+  document.querySelectorAll("#nestBody [data-uw]").forEach(b => b.onclick = () => {
+    cfg.web.roll_label.unwind = b.dataset.uw; nestPick.roll_label = 0; saveNestCfg(cfg); renderNest();
+  });
   document.querySelectorAll("#nestBody .ncard").forEach(b => b.onclick = () => { nestPick[item.kind === "sheet" ? item.gutterKey : item.webKey] = +b.dataset.n; renderNest(); });
   if (!nestOpen) return;
   const rerender = () => { saveNestCfg(cfg); renderNest(); };

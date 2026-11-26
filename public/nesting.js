@@ -29,7 +29,9 @@
     gutter: { folding_carton: 0.25, commercial: 0.25 },
     web: {
       pouch: { web: 30, usable: 29, gapAcross: 0.25, gapAround: 0.125 },
-      roll_label: { web: 13, usable: 12, gapAcross: 0.125, gapAround: 0.125 },
+      // unwind: "best" compares both ways; 1/2 = top/bottom off first (label width across the
+      // web), 3/4 = right/left side off first (label height across). 5-8 (wound in) match 1-4.
+      roll_label: { web: 13, usable: 12, gapAcross: 0.125, gapAround: 0.125, unwind: "best" },
     },
   };
 

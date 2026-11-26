@@ -72,3 +72,14 @@ test("pouches: height + gusset across the web, one layout, web utilisation", () 
   assert.ok(Math.abs(o.webUtilisation - 24.802 / 30) < 1e-9);
   assert.ok(Math.abs(o.unused - (29 - 24.802)) < 1e-9);
 });
+
+test("roll labels: unwind direction fixes which side runs across the web", () => {
+  const s = N.DEFAULTS.web.roll_label; // 12in usable, 0.125 gaps
+  // 3 x 5 label. Unwind 1/2: width (3) across -> 3 lanes. Unwind 3/4: height (5) across -> 2 lanes.
+  const top = N.nestWeb(3, 5, s, { fixed: true });
+  const side = N.nestWeb(5, 3, s, { fixed: true });
+  assert.strictEqual(top.length, 1);
+  assert.strictEqual(top[0].lanes, 3);
+  assert.strictEqual(side[0].lanes, 2);
+  assert.ok(Math.abs(top[0].repeat - 5.125) < 1e-9 && Math.abs(side[0].repeat - 3.125) < 1e-9);
+});
