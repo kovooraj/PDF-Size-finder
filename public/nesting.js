@@ -277,6 +277,105 @@
     };
   }
 
+  // ------------------------------------------------------------------ free-form nesting
+
+  /** OR-downsample by f (conservative: a coarse cell is set if any fine pixel is). */
+  function shrink(m, f) {
+    const w = Math.ceil(m.w / f), h = Math.ceil(m.h / f), data = new Uint8Array(w * h);
+    for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) if (m.data[y * m.w + x]) data[((y / f) | 0) * w + ((x / f) | 0)] = 1;
+    return { w, h, data };
+  }
+
+  /** Row runs of a mask: rows[j] = [a0, b0, a1, b1, ...] (inclusive). */
+  function runsOf(m) {
+    const rows = [];
+    for (let y = 0; y < m.h; y++) {
+      const r = [];
+      let x = 0;
+      while (x < m.w) {
+        if (!m.data[y * m.w + x]) { x++; continue; }
+        const a = x;
+        while (x < m.w && m.data[y * m.w + x]) x++;
+        r.push(a, x - 1);
+      }
+      rows.push(r);
+    }
+    return rows;
+  }
+
+  /**
+   * Greedy fill: each next die goes to the first free spot (scanning from the gripper edge, or
+   * from the left), trying every allowed turn and keeping the best spot. The sheet is a grid of
+   * occupied cells; for each row we keep the last occupied cell at or before each column, so a
+   * blocked run makes the scan jump straight past it.
+   */
+  function greedyNest(variants, W, H, order, pick) {
+    const occ = new Uint8Array(W * H), last = new Int32Array(W * H).fill(-1);
+    const refreshRow = (y) => {
+      let p = -1;
+      for (let x = 0; x < W; x++) { if (occ[y * W + x]) p = x; last[y * W + x] = p; }
+    };
+    const blockedUntil = (v, x, y) => { // -1 if free, else the next x worth trying
+      for (let j = 0; j < v.h; j++) {
+        const r = v.runs[j], row = (y + j) * W;
+        for (let i = 0; i < r.length; i += 2) {
+          const l = last[row + x + r[i + 1]];
+          if (l >= x + r[i]) return l - r[i] + 1;
+        }
+      }
+      return -1;
+    };
+    const first = (v) => {
+      if (order === "rows") {
+        for (let y = 0; y + v.h <= H; y++) {
+          let x = 0;
+          while (x + v.w <= W) { const b = blockedUntil(v, x, y); if (b < 0) return { x, y }; x = b; }
+        }
+      } else {
+        for (let x = 0; x + v.w <= W; x++) for (let y = 0; y + v.h <= H; y++) if (blockedUntil(v, x, y) < 0) return { x, y };
+      }
+      return null;
+    };
+    const placed = [];
+    for (;;) {
+      let best = null;
+      for (const v of variants) {
+        const p = first(v);
+        if (!p) continue;
+        const score = pick === "low" ? [p.y + v.h, p.x] : order === "rows" ? [p.y, p.x] : [p.x, p.y];
+        if (!best || score[0] < best.score[0] || (score[0] === best.score[0] && score[1] < best.score[1])) best = { v, p, score };
+      }
+      if (!best) break;
+      const { v, p } = best;
+      for (let j = 0; j < v.h; j++) {
+        const r = v.runs[j];
+        for (let i = 0; i < r.length; i += 2) for (let x = r[i]; x <= r[i + 1]; x++) occ[(p.y + j) * W + p.x + x] = 1;
+        refreshRow(p.y + j);
+      }
+      placed.push({ x: p.x, y: p.y, k: v.k });
+    }
+    return placed;
+  }
+
+  const FREE_F = 2; // free-form search runs at RES / 2 = 16 px per inch (1/16")
+
+  function freeNest(mask, gutterIn, usable) {
+    const r = Math.max(0, Math.round((gutterIn / 2) * RES));
+    const Wu = Math.floor(usable.w * RES + 1e-6), Hu = Math.floor(usable.h * RES + 1e-6);
+    const W = Math.floor((Wu + 2 * r) / FREE_F), H = Math.floor((Hu + 2 * r) / FREE_F);
+    const all = [0, 1, 2, 3].map((k) => {
+      const d = shrink(dilate(rotate(mask, k), r), FREE_F);
+      return { k, w: d.w, h: d.h, runs: runsOf(d) };
+    });
+    const sets = [[0, 2], [1, 3], [0, 1, 2, 3], [0], [1]];
+    let best = [];
+    for (const set of sets) for (const order of ["rows", "cols"]) for (const pick of ["first", "low"]) {
+      const pl = greedyNest(all.filter((v) => set.includes(v.k)), W, H, order, pick);
+      if (pl.length > best.length) best = pl;
+    }
+    return best.map((p) => ({ x: (p.x * FREE_F) / RES, y: (p.y * FREE_F) / RES, k: p.k }));
+  }
+
   /** Exact rectangle fill, optionally mixing turned pieces into the leftover strip. */
   function nestRect(pw, ph, gutter, usable, allowMix) {
     const fit = (len, n) => (n > len + 1e-9 ? 0 : Math.floor((len + gutter + 1e-9) / (n + gutter)));
@@ -320,10 +419,19 @@
       mask = maskCache.get(die);
     }
     const dieArea = mask ? mask.area / (RES * RES) : die.w * die.h;
-    return sheets.map((sheet) => {
+    const one = (sheet) => {
       const usable = usableOf(sheet);
       const straight = nestRect(die.w, die.h, gutter, usable, false);
       let best = mask ? nestMask(mask, gutter, usable) : nestRect(die.w, die.h, gutter, usable, opts.mix !== false);
+      if (mask && opts.free !== false) {
+        const free = freeNest(mask, gutter, usable);
+        if (free.length > best.ups) {
+          const turns = new Set(free.map((p) => p.k));
+          best = { ups: free.length, placements: free, layout: turns.size > 1
+            ? "free nest: dies turned and fitted into each other's gaps" : "free nest: dies fitted into each other's gaps",
+            turned90: [...turns].every((k) => k % 2 === 1) };
+        }
+      }
       if (mask && straight.ups > best.ups) best = { ...straight, rectFallback: true };
       return {
         sheet, usable,
@@ -341,6 +449,15 @@
         outline: mask ? "dieline" : "rectangle",
         openOutline: die.source === "dieline" && !mask,
       };
+    };
+    return sheets.map((sheet) => {
+      const res = one(sheet);
+      if (opts.tryOtherFeed !== false && sheet.w !== sheet.h) {
+        // Same sheet fed the other way: the gripper on the other edge changes the usable shape.
+        const alt = one({ ...sheet, w: sheet.h, h: sheet.w });
+        if (alt.ups > res.ups) res.otherFeed = { ups: alt.ups, gripperEdge: sheet.h };
+      }
+      return res;
     });
   }
 
