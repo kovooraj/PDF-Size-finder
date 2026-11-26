@@ -1009,12 +1009,13 @@ function nestItem(page){
     return {kind: "sheet", die: Nesting.rectDie(F("width"), F("height")), gutterKey: "commercial"};
   }
   if (res.product_type === "pouch") {
-    // Pouches run horizontally: the pouch width goes across the web and the flat length
-    // (front + gusset + back) runs along it, or the converter can't seal and glue them.
+    // Pouches run with the height and gusset across the web: the flat length
+    // (front + gusset + back) goes across the 30" web and the pouch width runs along it,
+    // or the converter can't seal and glue them.
     const fl = flatSize(res), pw = F("width");
-    let a = fl ? fl.w : pw, b = fl ? fl.h : F("height");
+    let a = fl ? fl.w : F("height"), b = fl ? fl.h : pw;   // a = across, b = along
     if (!a || !b) return null;
-    if (fl && pw ? Math.abs(b - pw) < Math.abs(a - pw) : a > b) [a, b] = [b, a];
+    if (fl && pw ? Math.abs(a - pw) < Math.abs(b - pw) : false) [a, b] = [b, a];
     return {kind: "web", w: a, h: b, webKey: "pouch", flat: !!fl, fixed: true};
   }
   if (res.product_type === "roll_label") return F("width") && F("height") ? {kind: "web", w: F("width"), h: F("height"), webKey: "roll_label"} : null;
@@ -1113,7 +1114,7 @@ function webHTML(item, out, cfg){
   const w = cfg.web[item.webKey], noun = item.webKey === "pouch" ? "pouch" : "label";
   const sel = Math.min(nestPick[item.webKey] ?? 0, out.length - 1);
   const cards = out.map((o, i) => `<button type="button" class="ncard${i === 0 && o.lanes && out.length > 1 ? " best" : ""}" data-n="${i}" aria-pressed="${i === sel}">
-      <span class="nm">${item.fixed ? "Horizontal · ready to seal" : o.turned ? "Turned 90°" : "As drawn"}</span>
+      <span class="nm">${item.fixed ? "Height + gusset across the web" : o.turned ? "Turned 90°" : "As drawn"}</span>
       <span class="ups num">${o.lanes}<small>${o.lanes === 1 ? "lane" : "lanes"}</small></span>
       <span class="sub num">${fmt(o.across)} across · repeat ${fmt(o.repeat)}</span>
       ${o.lanes ? `<span class="util num">${pct(o.utilisation)} web utilisation</span>
@@ -1124,8 +1125,8 @@ function webHTML(item, out, cfg){
   const o = out[sel];
   const notes = [
     `${fmt(w.web)} web, ${fmt(w.usable)} usable. Gap ${fmt(w.gapAcross)} between lanes and ${fmt(w.gapAround)} between ${noun === "pouch" ? "pouches" : "labels"} along the web.`,
-    item.webKey === "pouch" ? `Pouches run horizontally so they can be sealed and glued: the ${fmt(item.w)} pouch width goes across the web and the ${fmt(item.h)} ${item.flat ? "flat length (front, gusset and back)" : "height"} runs along it.` : "",
-    item.webKey === "pouch" && !item.flat ? "The flat sheet wasn't found, so the repeat uses the pouch height. Check it." : "",
+    item.webKey === "pouch" ? `Pouches run with the height and gusset across the web so they can be sealed and glued: the ${fmt(item.w)} ${item.flat ? "flat length (front, gusset and back)" : "height"} goes across the web and the ${fmt(item.h)} pouch width runs along it.` : "",
+    item.webKey === "pouch" && !item.flat ? "The flat sheet wasn't found, so the width across uses the pouch height only (no gusset). Check it." : "",
     "Web utilisation = printed width of all lanes (with the gaps between them) ÷ the max usable width.",
     item.webKey === "roll_label" ? "Check the customer's unwind direction: it decides which way the label runs on the roll." : "",
     "Planning estimate. Prepress confirms lanes, repeat and the die.",

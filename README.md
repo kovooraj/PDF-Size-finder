@@ -49,7 +49,8 @@ to zoom, drag to move, `+`/`-`/`0` keys, Esc to close.
    - *Commercial print*: exact rectangle fill, mixing turned pieces into the leftover strip.
    - *Sheets* (editable, saved per browser): 28 × 40 and 24 × 36 offset (gripper 0.5″, tail 0.375″, sides
      0.25″), 20.8125 × 29.5 digital (gripper 0.375″, tail and sides 0.25″). Gutter 0.25″.
-   - *Pouches*: 30″ web, 29″ usable, lanes 0.25″ apart, 0.125″ along the web.
+   - *Pouches*: 30″ web, 29″ usable; height + gusset (the flat length) runs across the web, width along it,
+     so they can be sealed and glued. Lanes 0.25″ apart, 0.125″ along the web.
    - *Roll labels*: 13″ web, 12″ usable, 0.125″ gaps.
 
 ## Run locally
