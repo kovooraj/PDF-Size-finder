@@ -108,8 +108,40 @@ h3{font-size:14px;margin:18px 0 4px}
 
 <script>
 const $ = s => document.querySelector(s);
-let file = null, ptype = "auto", unit = "in", data = null, pageIdx = 0;
+let file = null, ptype = "auto", unit = "in", data = null, pageIdx = 0, cfg = {direct_limit_bytes: 4*1024*1024, max_bytes: 50*1024*1024};
 try { unit = localStorage.getItem("dimUnit") || "in"; } catch {}
+// Access key: read once from ?key=..., remember it, and strip it from the address bar.
+let accessKey = "";
+try {
+  const u = new URL(location.href), k = u.searchParams.get("key");
+  if (k) { localStorage.setItem("dimKey", k); u.searchParams.delete("key"); history.replaceState(null, "", u); }
+  accessKey = localStorage.getItem("dimKey") || "";
+} catch {}
+const authHeaders = () => accessKey ? {Authorization: "Bearer " + accessKey} : {};
+fetch("/api/config").then(r => r.json()).then(c => {
+  cfg = c;
+  if (!c.ai) { const ai = $("#ai"); ai.checked = false; ai.disabled = true; ai.parentElement.title = "AI review isn't set up on this server (no API key)."; ai.parentElement.style.opacity = .6; }
+}).catch(() => {});
+
+async function sendFile(f) {
+  const fd = new FormData(); fd.append("product_type", ptype); fd.append("use_ai", $("#ai").checked);
+  if (f.size > cfg.max_bytes) throw new Error("File is larger than 50 MB.");
+  if (f.size > cfg.direct_limit_bytes) {
+    // Too big for a direct request on Vercel: upload to storage with a one-time signed URL.
+    const r1 = await fetch("/api/upload-url", {method: "POST", headers: authHeaders()});
+    const j1 = await r1.json();
+    if (!r1.ok) throw new Error(j1.detail || "Couldn't prepare the upload.");
+    const r2 = await fetch(j1.upload_url, {method: "PUT", headers: {"Content-Type": "application/pdf", "x-upsert": "false"}, body: f});
+    if (!r2.ok) throw new Error("Upload to storage failed (" + r2.status + ").");
+    fd.append("storage_path", j1.path);
+  } else {
+    fd.append("file", f);
+  }
+  const r = await fetch("/api/analyze", {method: "POST", body: fd, headers: authHeaders()});
+  let j; try { j = await r.json(); } catch { throw new Error(r.status === 413 ? "File is too large for a direct upload." : "The server returned an error (" + r.status + ")."); }
+  if (!r.ok) throw new Error(j.detail || "Something went wrong.");
+  return j;
+}
 
 const LABEL = {width:"Width",height:"Height",gusset:"Gusset",length:"Length",depth:"Depth",flat_width:"Flat width",flat_height:"Flat height"};
 const TYPE = {pouch:"Pouch",folding_carton:"Folding carton",roll_label:"Roll label",commercial:"Commercial print"};
@@ -151,12 +183,8 @@ $("#go").addEventListener("click", async () => {
   const go = $("#go"); go.disabled = true;
   go.innerHTML = `<span class="spin"></span>${$("#ai").checked ? "Measuring and reviewing…" : "Measuring…"}`;
   $("#out").innerHTML = `<div class="empty"><span class="spin"></span>Reading ${esc(file.name)}…</div>`;
-  const fd = new FormData(); fd.append("file", file); fd.append("product_type", ptype); fd.append("use_ai", $("#ai").checked);
   try {
-    const r = await fetch("/api/analyze", {method:"POST", body:fd});
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.detail || "Something went wrong.");
-    data = j; pageIdx = 0; render();
+    data = await sendFile(file); pageIdx = 0; render();
   } catch (err) {
     $("#out").innerHTML = `<div class="alert err">${esc(err.message)}</div>`;
   } finally { go.disabled = false; go.textContent = "Find dimensions"; }

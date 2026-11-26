@@ -32,18 +32,44 @@ A sales person uploads a customer's artwork PDF and gets the product dimensions:
    auto-detected and Claude names a different one, the measurement rules re-run with that type, so the numbers
    still come from geometry. If the AI call fails, the measured result is still returned.
 
-## Run
+## Run locally
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 export ANTHROPIC_API_KEY=...        # optional; without it only the measurement pass runs
 uvicorn app:app --port 8000         # open http://localhost:8000
 python -m pytest -q
 ```
 
-API: `POST /api/analyze` (multipart: `file`, `product_type` = auto|pouch|folding_carton|roll_label|commercial,
-`use_ai` = true|false). Optional env: `ARTWORK_DIMS_TOKEN` (bearer secret), `ARTWORK_DIMS_ALLOWED_ORIGINS`
-(CORS), `ARTWORK_DIMS_MODEL`, `ARTWORK_DIMS_EFFORT` (default `medium`).
+## Deploy on Vercel
+
+1. Push this folder to a new GitHub repo, then in Vercel: **Add New → Project → import the repo**. Vercel detects
+   FastAPI from `app.py` and serves the page from `public/`. No build settings are needed.
+2. **Settings → Environment Variables:**
+
+   | Variable | Needed | What it does |
+   |---|---|---|
+   | `ANTHROPIC_API_KEY` | for AI review | Without it the page greys out "AI review" and still measures |
+   | `ARTWORK_DIMS_TOKEN` | recommended | Access key. Share the link as `https://<your-app>.vercel.app/?key=<token>`; the page remembers it |
+   | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | for PDFs over 4 MB | See below |
+   | `ARTWORK_DIMS_BUCKET` | optional | Storage bucket name, default `dimension-finder` |
+   | `ARTWORK_DIMS_ALLOWED_ORIGINS` | optional | Lets your Next.js site call `/api/analyze` from the browser |
+   | `ARTWORK_DIMS_MODEL`, `ARTWORK_DIMS_EFFORT` | optional | Default `claude-opus-5-5`, `medium` |
+
+3. Redeploy after adding variables.
+
+**Large files.** A Vercel Function accepts about 4.5 MB per request. Dieline-only PDFs are usually far smaller,
+but print-ready artwork with photos often isn't. For files over 4 MB the page asks the server for a one-time
+signed upload URL, sends the PDF straight to Supabase Storage, and the server reads it from there and deletes it
+when done. To switch it on, create a **private** bucket named `dimension-finder` in your Supabase project and set
+`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`. The service key stays on the server.
+
+`vercel.json` sets a 120 s time limit (AI review usually takes 15–60 s) and 2 GB memory for rendering.
+PyMuPDF is pinned to 1.x because 2.x pulls in onnxruntime, which would push the function toward Vercel's size limit.
+
+API: `POST /api/analyze` (multipart: `file` **or** `storage_path`, `product_type` =
+auto|pouch|folding_carton|roll_label|commercial, `use_ai` = true|false; header `Authorization: Bearer <token>` if
+`ARTWORK_DIMS_TOKEN` is set). `GET /api/config` reports what is switched on.
 
 ## Fitting it into Print Monkey Design
 
