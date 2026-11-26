@@ -78,6 +78,9 @@ input[type=file]{display:none}
 .ptype[aria-checked=true] .ic{color:var(--accent)}
 .ptype b{font-weight:600;font-size:13.5px}
 .ptype small{font-size:11.5px;color:var(--muted)}
+.beta{display:inline-block;margin-left:7px;padding:1px 6px;border-radius:5px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;vertical-align:2px;color:#9a5b00;background:#fdf0d5;border:1px solid #f3d9a4}
+:root[data-theme="dark"] .beta{color:#f2c46d;background:#2f2512;border-color:#4a3a17}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .beta{color:#f2c46d;background:#2f2512;border-color:#4a3a17}}
 .ptype.auto{grid-column:span 2;flex-direction:row;align-items:center;gap:10px}
 .ptype.auto .ic{margin:0}
 
@@ -343,7 +346,7 @@ const ICON = {
   commercial:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 15h5"/></svg>',
 };
 const TYPES = [
-  {v:"auto", name:"Auto-detect", hint:"We work out the product from the file"},
+  {v:"auto", name:"Auto-detect", hint:"We work out the product from the file", beta:true},
   {v:"pouch", name:"Pouch", hint:"W × H × G"},
   {v:"folding_carton", name:"Folding carton", hint:"Flat + L × W × D"},
   {v:"roll_label", name:"Roll label", hint:"W × H per label"},
@@ -392,7 +395,7 @@ const fmt = v => { const p = valParts(v); return p.main + p.unit; };
 
 // ---------- sidebar
 function renderTypes(){
-  $("#ptypes").innerHTML = TYPES.map(t => `<button type="button" role="radio" class="ptype${t.v==="auto"?" auto":""}" aria-checked="${t.v===ptype}" data-v="${t.v}">${ICON[t.v]}<span><b>${t.name}</b><br><small>${t.hint}</small></span></button>`).join("");
+  $("#ptypes").innerHTML = TYPES.map(t => `<button type="button" role="radio" class="ptype${t.v==="auto"?" auto":""}" aria-checked="${t.v===ptype}" data-v="${t.v}">${ICON[t.v]}<span><b>${t.name}</b>${t.beta ? '<span class="beta" title="Auto-detect is still being tuned. Pick the product if you know it.">Beta</span>' : ""}<br><small>${t.hint}</small></span></button>`).join("");
 }
 renderTypes();
 $("#ptypes").addEventListener("click", e => { const b = e.target.closest(".ptype"); if (!b) return; ptype = b.dataset.v; renderTypes(); });
