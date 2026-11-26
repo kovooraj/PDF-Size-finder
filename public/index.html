@@ -470,9 +470,15 @@ function putWithProgress(url, body, onProgress){
     x.setRequestHeader("Content-Type", "application/pdf");
     x.setRequestHeader("x-upsert", "false");
     x.upload.onprogress = e => e.lengthComputable && onProgress(e.loaded, e.total);
-    x.onload = () => x.status < 300 ? resolve() : reject(new Error(
-      x.status === 413 ? "Storage rejected the file as too large. Raise the file size limit in Supabase (Storage settings and the bucket)." :
-      "Upload to storage failed (" + x.status + "): " + (x.responseText || "").slice(0, 200)));
+    x.onload = () => {
+      if (x.status < 300) return resolve();
+      const body = x.responseText || "";
+      // Supabase answers an over-limit upload with 400 and a 413 inside the JSON body.
+      const tooBig = x.status === 413 || /"statusCode"\s*:\s*"?413|maximum allowed size|exceeded/i.test(body);
+      reject(new Error(tooBig
+        ? `Storage refused the file: it's over the storage size limit. An admin needs to raise the "Global file size limit" in Supabase → Storage → Settings (Pro plans allow up to 500 GB).`
+        : "Upload to storage failed (" + x.status + "): " + body.slice(0, 200)));
+    };
     x.onerror = () => reject(new Error("Upload interrupted. Check the connection and try again."));
     x.send(body);
   });
