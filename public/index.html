@@ -245,6 +245,32 @@ dl.kv dt{color:var(--muted)}
 pre.raw{white-space:pre-wrap;word-break:break-word;background:var(--panel-2);border:1px solid var(--line);padding:12px;border-radius:10px;max-height:460px;overflow:auto;font-size:12px}
 .aisum{margin:12px 0 4px;padding:12px 14px;border-radius:10px;background:var(--panel-2);border:1px solid var(--line)}
 
+/* ---------- gusset question */
+.modal-back{position:fixed;inset:0;z-index:60;background:rgba(10,10,12,.55);display:grid;place-items:center;padding:16px}
+.modal-back[hidden]{display:none}
+.modal{width:min(480px,100%);background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.35);padding:22px}
+.modal h2{margin:0 0 6px;font-size:18px;letter-spacing:-.01em}
+.modal p{margin:0 0 14px;color:var(--ink-2);font-size:14px}
+.modal label.f{display:block;font-weight:600;font-size:13px;margin:14px 0 6px}
+.gin{display:flex;align-items:center;gap:8px}
+.gin input{width:120px;font:600 20px ui-sans-serif,system-ui;padding:8px 10px;border:1px solid var(--line-2);border-radius:10px;background:var(--panel-2);color:var(--ink)}
+.gin input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.gin span{color:var(--muted);font-weight:600}
+.quick{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.quick button{border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:5px 11px;font-size:13px;cursor:pointer;font-weight:550}
+.quick button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.lay{display:grid;gap:6px}
+.lay label{display:flex;gap:9px;align-items:flex-start;padding:9px 11px;border:1px solid var(--line);border-radius:10px;cursor:pointer;font-size:13.5px}
+.lay label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.lay input{margin-top:3px;accent-color:var(--accent)}
+.lay small{display:block;color:var(--muted);font-size:12.5px}
+.result-line{margin-top:16px;padding:12px 14px;border-radius:11px;background:var(--panel-2);border:1px solid var(--line);font-size:14px}
+.result-line b{font-size:16px}
+.result-line.err{border-color:var(--bad);color:var(--bad)}
+.mactions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.mactions .primary{margin:0;width:auto;padding:10px 18px}
+.linkbtn{background:none;border:0;color:var(--accent);cursor:pointer;font-size:13px;font-weight:550;padding:0}
+
 /* ---------- full-screen viewer */
 .viewer{position:fixed;inset:0;z-index:50;background:#0d0d0f;display:flex;flex-direction:column;color:#ececee}
 .viewer[hidden]{display:none}
@@ -313,6 +339,23 @@ pre.raw{white-space:pre-wrap;word-break:break-word;background:var(--panel-2);bor
   </aside>
 
   <main id="main" aria-live="polite"></main>
+</div>
+
+<div class="modal-back" id="gModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="gTitle">
+    <h2 id="gTitle">Does this pouch have a gusset?</h2>
+    <p id="gIntro"></p>
+    <label class="f" for="gIn">Gusset depth (full, unfolded)</label>
+    <div class="gin"><input id="gIn" type="number" min="0" step="0.0625" inputmode="decimal" value="0"><span id="gUnit">in</span></div>
+    <div class="quick" id="gQuick"></div>
+    <label class="f">The file shows</label>
+    <div class="lay">
+      <label><input type="radio" name="glay" value="front_back"><span>Front and back on one sheet<small>Height = (long side − gusset) ÷ 2</small></span></label>
+      <label><input type="radio" name="glay" value="single"><span>One panel only<small>Width × height as printed</small></span></label>
+    </div>
+    <div class="result-line" id="gResult"></div>
+    <div class="mactions"><button class="btn" id="gSkip">Skip</button><button class="primary" id="gApply">Use these sizes</button></div>
+  </div>
 </div>
 
 <div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-label="Artwork preview">
@@ -636,10 +679,11 @@ function summaryLine(page){
   const fl = flatSize(res), flatTxt = fl ? ` · Flat ${fmt(fl.w)} × ${fmt(fl.h)}` : "";
   if (ai && !ai.error && ai.summary_for_sales) return ai.summary_for_sales + (fl && !/flat/i.test(ai.summary_for_sales) ? flatTxt : "");
   const ks = mainKeys(res);
-  return `${TYPE_NAME[res.product_type]}, ` + ks.map(k => `${fmt(res.fields[k].value_in)} ${LABEL[k]}`).join(" × ") + flatTxt;
+  return `${typeName(res)}, ` + ks.map(k => `${fmt(res.fields[k].value_in)} ${LABEL[k]}`).join(" × ") + flatTxt;
 }
 // Flat (unfolded) size: cartons have flat_width/flat_height; pouches have a flat sheet annotation x width.
 function flatSize(res){
+  if (res.flat_sheet) return {...res.flat_sheet, keys: "flat", label: "sheet"};
   if (res.fields.flat_width && res.fields.flat_height)
     return {w: res.fields.flat_width.value_in, h: res.fields.flat_height.value_in, conf: res.fields.flat_width.confidence,
             keys: "flat_width flat_height", label: "unfolded"};
@@ -648,6 +692,98 @@ function flatSize(res){
     return {w: fa.value_in, h: res.fields.width.value_in, conf: res.fields.width.confidence, keys: "flat width", label: "sheet"};
   return null;
 }
+const typeName = res => res.subtype || TYPE_NAME[res.product_type];
+
+// ---------- pouch gusset question (no gusset / fold lines found in the file)
+let gPage = 0;
+function gusset_in(){
+  const v = parseFloat($("#gIn").value);
+  return isFinite(v) && v >= 0 ? (unit === "mm" ? v / 25.4 : v) : NaN;
+}
+function pouchFromSheet(pr, G, layout){
+  const L = Math.max(pr.sheet_w_in, pr.sheet_h_in), S = Math.min(pr.sheet_w_in, pr.sheet_h_in);
+  if (layout === "single") return {W: pr.sheet_w_in, H: pr.sheet_h_in, G};
+  return {W: S, H: (L - G) / 2, G};
+}
+function gussetPreview(){
+  const pr = data.pages[gPage].result.prompt, G = gusset_in(), lay = document.querySelector('input[name="glay"]:checked').value;
+  const out = $("#gResult");
+  document.querySelectorAll("#gQuick button").forEach(b => b.classList.toggle("on", Math.abs(+b.dataset.g - (isNaN(G) ? -1 : G)) < 1e-6));
+  if (isNaN(G)) { out.className = "result-line err"; out.textContent = "Enter a gusset depth (0 for a lay-flat pouch)."; $("#gApply").disabled = true; return; }
+  const d = pouchFromSheet(pr, G, lay);
+  if (!(d.H > 0)) { out.className = "result-line err"; out.textContent = "That gusset is bigger than the sheet allows."; $("#gApply").disabled = true; return; }
+  out.className = "result-line"; $("#gApply").disabled = false;
+  out.innerHTML = `${G > 0 ? "Stand-up pouch" : "Lay-flat pouch"}: <b class="num">${fmt(d.W)} W × ${fmt(d.H)} H${G > 0 ? ` × ${fmt(d.G)} G` : ""}</b>`
+    + (G > d.H ? `<div style="color:var(--warn);font-size:12.5px;margin-top:4px">The gusset is bigger than the height. Double-check the number.</div>` : "");
+}
+function openGusset(i){
+  gPage = i;
+  const res = data.pages[i].result, pr = res.prompt, ans = res.prompt_answer;
+  $("#gIntro").innerHTML = `We couldn't find a gusset or fold lines in this file. The printed sheet is <b class="num">${fmt(pr.sheet_w_in)} × ${fmt(pr.sheet_h_in)}</b> (from the ${esc(pr.sheet_source)}). Enter <b>0</b> if it's a lay-flat pouch.`;
+  $("#gUnit").textContent = unit === "mm" ? "mm" : "in";
+  $("#gIn").step = unit === "mm" ? "1" : "0.0625";
+  const g0 = ans ? ans.gusset_in : 0;
+  $("#gIn").value = unit === "mm" ? trimNum(g0*25.4, 1) : trimNum(g0, 4);
+  const quick = unit === "mm" ? [0, 25, 38, 50, 75, 100] : [0, 1, 1.5, 2, 3, 4];
+  $("#gQuick").innerHTML = quick.map(q => `<button type="button" data-g="${unit === "mm" ? q/25.4 : q}">${q === 0 ? "0 · lay flat" : q + (unit === "mm" ? " mm" : "″")}</button>`).join("");
+  const lay = ans ? ans.layout : pr.suggested_layout;
+  document.querySelectorAll('input[name="glay"]').forEach(r => r.checked = r.value === lay);
+  $("#gModal").hidden = false;
+  gussetPreview();
+  setTimeout(() => { $("#gIn").focus(); $("#gIn").select(); }, 30);
+}
+function closeGusset(){ $("#gModal").hidden = true; }
+$("#gIn").addEventListener("input", gussetPreview);
+document.querySelectorAll('input[name="glay"]').forEach(r => r.addEventListener("change", gussetPreview));
+$("#gQuick").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; const g = +b.dataset.g; $("#gIn").value = unit === "mm" ? trimNum(g*25.4, 1) : trimNum(g, 4); gussetPreview(); });
+$("#gSkip").onclick = () => { data.pages[gPage].result.prompt_skipped = true; closeGusset(); };
+$("#gModal").addEventListener("keydown", e => {
+  if (e.key === "Escape") { $("#gSkip").click(); }
+  if (e.key === "Enter" && !$("#gApply").disabled) { e.preventDefault(); $("#gApply").click(); }
+});
+$("#gModal").addEventListener("click", e => { if (e.target.id === "gModal") $("#gSkip").click(); });
+$("#gApply").onclick = () => {
+  const page = data.pages[gPage], res = page.result, pr = res.prompt;
+  const G = gusset_in(), layout = document.querySelector('input[name="glay"]:checked').value, d = pouchFromSheet(pr, G, layout);
+  if (!(d.H > 0)) return;
+  const conf = pr.sheet_confidence === "high" ? "high" : "medium";
+  const basis = layout === "single" ? "printed sheet (one panel)" : "printed sheet, front and back side by side";
+  res.fields = {
+    width: {value_in: d.W, value_mm: d.W*25.4, source: `${basis} (${pr.sheet_source})`, confidence: conf},
+    height: {value_in: d.H, value_mm: d.H*25.4, source: layout === "single" ? `${basis} (${pr.sheet_source})` : `(sheet long side − gusset) ÷ 2, from the ${pr.sheet_source}`, confidence: conf},
+  };
+  if (G > 0) res.fields.gusset = {value_in: G, value_mm: G*25.4, source: "gusset depth you entered", confidence: "high"};
+  res.subtype = G > 0 ? "Stand-up pouch" : "Lay-flat pouch";
+  res.flat_sheet = {w: pr.sheet_w_in, h: pr.sheet_h_in, conf};
+  res.prompt_answer = {gusset_in: G, layout};
+  res.notes = (res.notes || []).filter(n => !n.startsWith("Sizes worked out from"));
+  res.notes.unshift(`Sizes worked out from the ${fmt(pr.sheet_w_in)} × ${fmt(pr.sheet_h_in)} printed sheet and a ${G > 0 ? fmt(G) + " gusset" : "0 gusset (lay-flat)"}${layout === "single" ? ", one panel" : ", front and back side by side"}.`);
+  // arrows: sheet rectangle from the overlay (page points from the top-left)
+  const t = page.view.overlay.trim;
+  if (t) {
+    const [x, y, w, h] = t, k = 72, horiz = w >= h, anns = [];
+    const A = (key, label, x1, y1, x2, y2, side, value_in, primary = true) => anns.push({key, label, x1, y1, x2, y2, side, lane: 0, primary, value_in});
+    if (layout === "single") {
+      A("width", "W", x, y + h, x + w, y + h, "bottom", d.W);
+      A("height", "H", x, y, x, y + h, "left", d.H);
+      if (G > 0) A("gusset", "G", x + w, y + h - G*k/2, x + w, y + h, "right", G);
+    } else if (horiz) {
+      A("height", "H", x, y, x + d.H*k, y, "top", d.H);
+      if (G > 0) A("gusset", "G", x + d.H*k, y, x + (d.H + G)*k, y, "top", G);
+      A("width", "W", x + w, y, x + w, y + h, "right", d.W);
+      A("flat", "Flat", x, y + h, x + w, y + h, "bottom", w / k, false);
+    } else {
+      A("height", "H", x, y, x, y + d.H*k, "left", d.H);
+      if (G > 0) A("gusset", "G", x, y + d.H*k, x, y + (d.H + G)*k, "left", G);
+      A("width", "W", x, y, x + w, y, "top", d.W);
+      A("flat", "Flat", x + w, y, x + w, y + h, "right", h / k, false);
+    }
+    res.annotations = anns;
+  }
+  closeGusset();
+  renderResult();
+};
+
 function chipsHTML(){
   return LAYERS.map(L => `<button type="button" class="chip c-${L.k}" data-layer="${L.k}" aria-pressed="${!!layers[L.k]}"><i></i>${L.name}</button>`).join("");
 }
@@ -669,6 +805,7 @@ function renderResult(){
   const page = data.pages[pageIdx], res = page.result, ai = page.ai_review || null;
   const keys = mainKeys(res);
   const src = data.source || {};
+  if (res.prompt && !res.prompt_answer && !res.prompt_skipped) setTimeout(() => openGusset(pageIdx), 60);
   const flat = flatSize(res);
   const pages = data.pages.length > 1 ? `<div class="tabsmini" role="tablist">${data.pages.map((p, i) => `<button role="tab" aria-selected="${i===pageIdx}" data-page="${i}">Page ${p.page}</button>`).join("")}</div>` : "";
 
@@ -700,8 +837,9 @@ function renderResult(){
   $("#main").innerHTML = `
     <section class="card summary">
       <div class="sum-head">
-        <span class="badge">${ICON[res.product_type].replace('class="ic"', "")}${TYPE_NAME[res.product_type]}</span>
+        <span class="badge">${ICON[res.product_type].replace('class="ic"', "")}${typeName(res)}</span>
         <span class="muted">${esc(res.product_type_source)}</span>
+        ${res.prompt ? `<button class="linkbtn" id="gEdit">${res.prompt_answer ? "Change gusset" : "Enter gusset"}</button>` : ""}
         <div class="spacer"></div>
         ${pages}
         <div class="seg" role="group" aria-label="Units"><button data-u="in" aria-pressed="${unit==="in"}">in</button><button data-u="mm" aria-pressed="${unit==="mm"}">mm</button></div>
@@ -756,6 +894,7 @@ function renderResult(){
     t.addEventListener("mouseenter", () => inline.highlight(t.dataset.key));
     t.addEventListener("mouseleave", () => inline.highlight(null));
   });
+  if ($("#gEdit")) $("#gEdit").onclick = () => openGusset(pageIdx);
   document.querySelectorAll(".seg button[data-u]").forEach(b => b.onclick = () => { unit = b.dataset.u; store.set("dimUnit", unit); renderResult(); });
   document.querySelectorAll("[data-page]").forEach(b => b.onclick = () => { pageIdx = +b.dataset.page; renderResult(); });
   if ($("#copyflat")) $("#copyflat").onclick = async () => {

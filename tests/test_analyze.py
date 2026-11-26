@@ -224,3 +224,17 @@ def test_range_file_reads_little(tmp_path):
         assert f.bytes_fetched < len(blob)
     finally:
         srv.shutdown()
+
+
+def test_pouch_without_gusset_asks_for_it():
+    r = run(samples.layflat_sheet(), "pouch")
+    res = r["pages"][0]["result"]
+    pr = res["prompt"]
+    assert pr and pr["type"] == "pouch_gusset"
+    assert (pr["sheet_w_in"], pr["sheet_h_in"]) == (10.0, 4.0)
+    assert pr["suggested_layout"] == "front_back" and pr["sheet_source"] == "crop/trim marks"
+
+
+def test_pouch_with_folds_does_not_ask():
+    assert run(samples.standup_pouch(), "pouch")["pages"][0]["result"]["prompt"] is None
+    assert run(samples.layflat_sheet(), "commercial")["pages"][0]["result"]["prompt"] is None

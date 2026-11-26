@@ -133,6 +133,13 @@ def trimbox_flyer() -> bytes:
                                            "/BleedBox": [0, 0, 8.75, 11.25]})
 
 
+def layflat_sheet() -> bytes:
+    """Lay-flat pouch art: front + back side by side, 10 x 4 sheet with crop marks, no dieline."""
+    x0, y0 = 0.5, 0.5
+    art = f"q 0.85 0.1 0.6 0 k {(x0-0.125)*IN} {(y0-0.125)*IN} {10.25*IN} {4.25*IN} re f Q\n"
+    return _make(11, 5, art + _crop_marks(x0, y0, x0 + 10, y0 + 4), {"Reg": ("All", (1, 1, 1, 1))})
+
+
 ALL = {
     "business_card": business_card,
     "roll_label": roll_label,
@@ -140,6 +147,7 @@ ALL = {
     "standup_pouch": standup_pouch,
     "oversized_page": oversized_page,
     "trimbox_flyer": trimbox_flyer,
+    "layflat_sheet": layflat_sheet,
 }
 
 if __name__ == "__main__":

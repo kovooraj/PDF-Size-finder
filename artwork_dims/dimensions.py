@@ -58,6 +58,8 @@ class DimResult:
     questions: list[str] = field(default_factory=list)
     # Where to draw each dimension on the preview: PDF points, y up. See ann().
     annotations: list[dict] = field(default_factory=list)
+    # A question the page should ask the user before the result is final (e.g. pouch gusset depth).
+    prompt: dict | None = None
 
     def ann(self, key: str, a, b, side: str, lane: int = 0, primary: bool = True, transposed: bool = False,
             value_in: float | None = None, label: str | None = None):
@@ -80,6 +82,7 @@ class DimResult:
                 anns.append({**an, "value_in": round(v, 4)})
         return {
             "annotations": anns,
+            "prompt": self.prompt,
             "product_type": self.product_type,
             "product_type_source": self.product_type_source,
             "fields": {k: v.as_dict() for k, v in self.fields.items()},
@@ -372,8 +375,19 @@ def pouch(f: PageFacts, res: DimResult):
             res.fields["width"] = Field(_w(trim), tsrc, tconf)
             res.fields["height"] = Field(_h(trim), tsrc, tconf)
             _ann_rect(res, trim)
-            if not lab.get("gusset"):
-                res.questions.append("Is this a stand-up pouch with a bottom gusset? If yes, what gusset depth?")
+            if not lab.get("gusset") and not lab.get("side_gusset"):
+                # No gusset or fold lines in the file: the page asks for the gusset depth and works out
+                # W x H (x G) from the printed sheet. 0 = lay-flat pouch (front and back on one sheet).
+                sw, sh = _w(trim), _h(trim)
+                ratio = max(sw, sh) / max(min(sw, sh), 1e-6)
+                res.prompt = {
+                    "type": "pouch_gusset",
+                    "sheet_w_in": round(sw, 4), "sheet_h_in": round(sh, 4),
+                    "sheet_source": tsrc, "sheet_confidence": tconf,
+                    # front + back side by side is the normal print layout; a near-square sheet is
+                    # more likely a single panel
+                    "suggested_layout": "front_back" if ratio >= 1.5 else "single",
+                }
 
     # A printed spec that matches the measurement confirms it; then labels can't override it.
     measured = [res.fields[k].value_in for k in ("width", "height", "gusset") if k in res.fields]
@@ -389,7 +403,7 @@ def pouch(f: PageFacts, res: DimResult):
             res.fields[key] = Field(lab[key], "dimension callout printed on the dieline", "high")
     if "side_gusset" in lab:
         res.fields["gusset"] = Field(lab["side_gusset"], "side gusset callout", "high")
-    if f.raster_only:
+    if f.raster_only and tsrc.startswith("page size"):
         res.warnings.append("The file is a flat image (no vector dieline), so sizes come from the page size or text only.")
 
 
