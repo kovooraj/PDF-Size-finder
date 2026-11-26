@@ -171,7 +171,7 @@ main{min-width:0;display:grid;gap:16px}
 .chip[aria-pressed=true]{color:var(--ink);border-color:var(--line-2);background:var(--panel-2)}
 .chip[aria-pressed=false] i{opacity:.35}
 .chip.c-dims i{border-color:var(--dim)}.chip.c-cut i{border-color:var(--cut)}.chip.c-crease i{border-top-style:dashed;border-color:var(--crease)}
-.chip.c-trim i{border-top-style:dashed;border-color:var(--trim)}.chip.c-art i{border-top-style:dotted;border-color:var(--art)}.chip.c-marks i{border-color:var(--marks)}
+.chip.c-trim i{border-top-style:dashed;border-color:var(--trim)}.chip.c-art i{border-top-style:dotted;border-color:var(--art)}.chip.c-marks i{border-color:var(--marks)}.chip.c-info i{height:8px;border:1px dashed #64748b;background:rgba(100,116,139,.2)}
 .tabsmini{display:flex;gap:4px}
 .tabsmini button{border:1px solid transparent;background:none;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer;color:var(--muted);font-weight:550}
 .tabsmini button[aria-selected=true]{border-color:var(--line-2);color:var(--ink);background:var(--panel-2)}
@@ -192,7 +192,8 @@ main{min-width:0;display:grid;gap:16px}
 .L .trim{stroke:var(--trim);stroke-width:1.6;stroke-dasharray:7 4}
 .L .art{stroke:var(--art);stroke-width:1.3;stroke-dasharray:2 3}
 .L .marks{stroke:var(--marks);stroke-width:2.2}
-.off-cut .cut,.off-crease .crease,.off-trim .trim,.off-art .art,.off-marks .marks,.off-dims .D{display:none}
+.L rect.info{fill:rgba(100,116,139,.16);stroke:#64748b;stroke-width:1.4;stroke-dasharray:3 3}
+.off-cut .cut,.off-crease .crease,.off-trim .trim,.off-art .art,.off-marks .marks,.off-info .info,.off-dims .D{display:none}
 .D .ext{stroke:var(--dim);stroke-width:1;stroke-dasharray:3 3;opacity:.8}
 .D .halo{stroke:#fff;stroke-width:5;opacity:.85;stroke-linecap:round}
 .D .ln{stroke:var(--dim);stroke-width:1.6}
@@ -446,11 +447,12 @@ const ORDER = {pouch:["width","height","gusset"], folding_carton:["length","widt
 const LAYERS = [
   {k:"dims", name:"Dimensions"}, {k:"cut", name:"Dieline"}, {k:"crease", name:"Folds"},
   {k:"trim", name:"Size box"}, {k:"art", name:"Artwork extents"}, {k:"marks", name:"Crop marks"},
+  {k:"info", name:"Info areas"},
 ];
 
 let file = null, ptype = "auto", data = null, pageIdx = 0, detailTab = "measure";
 let unit = store.get("dimUnit", "in");
-let layers = store.get("dimLayers", {dims:true, cut:true, crease:true, trim:false, art:false, marks:false});
+let layers = {info:true, ...store.get("dimLayers", {dims:true, cut:true, crease:true, trim:false, art:false, marks:false})};
 let cfg = {direct_limit_bytes: 4*1024*1024, max_bytes: 1024*1024*1024, ai: false};
 
 // ---------- access key (?key=...) remembered per browser
@@ -630,6 +632,7 @@ function makeCanvas(host, page, opts = {}){
   const svg = el("svg", {"aria-hidden": "true"});
   const lines = el("g", {class: "L"}, svg);
   const ov = v.overlay;
+  (ov.info || []).forEach(r => el("rect", {class:"info", x:r[0], y:r[1], width:r[2], height:r[3]}, lines));
   if (ov.trim) el("rect", {class:"trim", x:ov.trim[0], y:ov.trim[1], width:ov.trim[2], height:ov.trim[3]}, lines);
   if (ov.art) el("rect", {class:"art", x:ov.art[0], y:ov.art[1], width:ov.art[2], height:ov.art[3]}, lines);
   if (ov.marks.length) el("path", {class:"marks", d: segPath(ov.marks)}, lines);
@@ -974,6 +977,7 @@ function renderTab(){
       ["Crop marks", det.trim_marks ? `${det.trim_marks} strokes → ${box(det.trim_marks_rect_in)}` : "None found"],
       ["Dieline", det.dieline_source === "none" ? "None found" : `${esc(det.dieline_names.join(", ") || "unnamed")} (${det.dieline_source}) · ${det.cut_paths} cut, ${det.crease_paths} fold paths · ${box(det.dieline_bbox_in)}`],
       ["Artwork extents", box(det.art_bbox_in)],
+      ["Info / legend areas left out", (det.info_blocks || []).length ? det.info_blocks.map(b => `${fmt(b.width_in)} × ${fmt(b.height_in)} (${esc(b.keywords.slice(0, 5).join(", "))})`).join("<br>") : "None found"],
       ["White space to page edge", ws ? Object.entries(ws.margins_to_page).map(([k, v]) => `${k.replace("_in", "")} ${fmt(v)}`).join(" · ") : "–"],
       ["Spot colours", esc(det.spot_colors.join(", ")) || "None"],
       ["Layers", esc(det.layers.join(", ")) || "None"],

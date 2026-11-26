@@ -12,6 +12,7 @@ import pymupdf
 from .classify import PT_PER_IN, art_extents, classify, trim_from_marks, union_bbox
 from .dimensions import PRODUCT_TYPES, PageFacts, _clusters, _fold_segments, compute
 from .geometry import Rect, extract_page_geometry
+from .infoblocks import apply_info_blocks, find_info_blocks, in_blocks
 from .textdims import find_callouts
 
 MAX_PAGES = 4
@@ -58,7 +59,7 @@ def _text_boxes(page: pymupdf.Page) -> tuple[str, list[Rect], list[dict]]:
                     continue
                 r = _mu_to_pdf(page, span["bbox"])
                 is_note = bool(NON_ART_TEXT.search(t))
-                spans_out.append({"text": t, "note": is_note})
+                spans_out.append({"text": t, "note": is_note, "rect": r})
                 if not is_note:
                     art_boxes.append(r)
     return full, art_boxes, spans_out
@@ -160,13 +161,19 @@ def analyze_pdf(data: bytes, product_type: str | None = None, max_pages: int = M
         text, text_art_boxes, spans = _text_boxes(mpage)
         callouts = find_callouts(text)
 
+        # Title blocks, legends and spec panels beside the product: set them aside before sizing.
+        product = union_bbox(cls.cut) or marks_rect or trim_box
+        blocks = find_info_blocks(spans, geo, media, product)
+        if apply_info_blocks(cls, blocks):
+            marks_rect = trim_from_marks(cls.trim_marks, media)
+
         vector_art = [p for p in cls.art if p.fill or p.stroke]
         page_area = (media[2] - media[0]) * (media[3] - media[1])
         img_area = sum(max(0, (im.bbox[2] - im.bbox[0]) * (im.bbox[3] - im.bbox[1])) for im in geo.images)
         raster_only = (not cls.cut and not cls.crease and len(vector_art) <= 2
                        and img_area >= 0.6 * page_area and not text.strip())
 
-        art = art_extents(cls, geo, text_art_boxes, media)
+        art = art_extents(cls, geo, text_art_boxes, media, skip=lambda r: in_blocks(r, blocks))
         clean_png, zoom = _render(data, i, None, PREVIEW_LONG_SIDE)
         if raster_only:
             art = _pixel_content_bbox(clean_png, zoom, media) or art
@@ -174,6 +181,12 @@ def analyze_pdf(data: bytes, product_type: str | None = None, max_pages: int = M
         facts = PageFacts(media=media, trim_box=trim_box, bleed_box=bleed_box, trim_marks_rect=marks_rect,
                           classified=cls, art_bbox=art, callouts=callouts, text=text, raster_only=raster_only)
         res = compute(facts, product_type)
+        if blocks:
+            res.notes.append(
+                f"Left out {len(blocks)} info / legend area{'s' if len(blocks) != 1 else ''} beside the product ("
+                + "; ".join(f"{b.as_dict()['width_in']}″ × {b.as_dict()['height_in']}″ with "
+                            + ", ".join(b.keywords[:4]) for b in blocks) + "). Turn on 'Info areas' in the preview to see "
+                "what was left out.")
 
         from .dimensions import best_trim  # local to avoid cycle in type checkers
         trim_rect, _, _ = best_trim(facts)
@@ -218,6 +231,7 @@ def analyze_pdf(data: bytes, product_type: str | None = None, max_pages: int = M
                 "marks": [seg_out(s) for s in cls.trim_marks],
                 "trim": rect_out(trim_rect),
                 "art": rect_out(art),
+                "info": [rect_out(b.rect) for b in blocks],
                 "truncated": len(overlays["cut"]) > MAX_OVERLAY_SEGMENTS or len(overlays["crease"]) > MAX_OVERLAY_SEGMENTS,
             },
         }
@@ -255,6 +269,7 @@ def analyze_pdf(data: bytes, product_type: str | None = None, max_pages: int = M
                 "images": len(geo.images),
                 "raster_only": raster_only,
                 "content_truncated": geo.truncated,
+                "info_blocks": [b.as_dict() for b in blocks],
             },
             "fold_lines_in": fold_lines,
             "callouts": [c.as_dict() for c in callouts],

@@ -281,3 +281,55 @@ def test_dieline_swatch_in_a_legend_does_not_widen_the_die():
     r = run(out.getvalue())
     assert fields(r)["flat_width"] == pytest.approx(fields(base)["flat_width"], abs=0.01)
     assert fields(r)["length"] == pytest.approx(3.0, abs=0.01)
+
+
+def _with_info_panel(pdf_bytes: bytes, x_in: float, swatch_die: bool = False) -> bytes:
+    """Add a converter-style info panel (framed sections, spec wording, ink swatches) at x_in."""
+    import io
+    import pikepdf
+    pdf = pikepdf.open(io.BytesIO(pdf_bytes))
+    pg = pdf.pages[0]
+    mb = [float(v) for v in pg.obj.MediaBox]
+    x = x_in * 72
+    if x + 220 > mb[2]:
+        pg.obj.MediaBox = [mb[0], mb[1], x + 240, mb[3]]
+    lines = ["Customer: Acme Foods", "Job number: 12345", "Die cut No: D-778", "Ink information",
+             "CMYK + PMS 186", "Print process: Offset", "Coating: UV", "Approved by:", "Date:", "Revision 2"]
+    c = [f"q 0 0 0 1 K 0.5 w {x} 20 210 {len(lines) * 16 + 30} re S Q"]
+    for i, ln in enumerate(lines):
+        c.append(f"BT /F1 9 Tf 0 0 0 1 k {x + 8} {30 + i * 16} Td ({ln}) Tj ET")
+    for j in range(4):
+        c.append(f"q {j * 0.25} 0.5 0.2 0 k {x + 120 + j * 22} 40 18 18 re f Q")
+    if swatch_die:
+        c.append(f"q /Die CS 1 SCN 0.5 w {x + 120} 90 m {x + 190} 90 l S Q")
+    pg.contents_add(pdf.make_stream("\n".join(c).encode()))
+    out = io.BytesIO(); pdf.save(out)
+    return out.getvalue()
+
+
+def test_info_panel_beside_a_carton_is_left_out():
+    base = run(samples.rte_carton(L=3.0, W=2.0, D=6.0))
+    page_w = base["pages"][0]["boxes_in"]["media"]["width"]
+    r = run(_with_info_panel(samples.rte_carton(L=3.0, W=2.0, D=6.0), page_w + 0.5, swatch_die=True))
+    p = r["pages"][0]
+    assert fields(r)["flat_width"] == pytest.approx(fields(base)["flat_width"], abs=0.01)
+    assert len(p["detected"]["info_blocks"]) == 1
+    assert p["detected"]["art_bbox_in"]["width"] <= base["pages"][0]["detected"]["art_bbox_in"]["width"] + 0.01
+    assert p["view"]["overlay"]["info"]
+    assert any("info / legend" in n for n in p["result"]["notes"])
+
+
+def test_info_panel_at_page_edge_does_not_inflate_artwork_size():
+    # No trim box, marks or dieline: size comes from artwork extents, which must skip the panel.
+    r0 = run(samples.oversized_page())
+    w0 = r0["pages"][0]["detected"]["art_bbox_in"]["width"]
+    media_w = r0["pages"][0]["boxes_in"]["media"]["width"]
+    r = run(_with_info_panel(samples.oversized_page(), media_w - 3.2))
+    assert r["pages"][0]["detected"]["info_blocks"]
+    assert r["pages"][0]["detected"]["art_bbox_in"]["width"] == pytest.approx(w0, abs=0.01)
+
+
+def test_product_text_is_not_an_info_block():
+    # Spec-like words printed on the product itself (inside the die) must stay artwork.
+    r = run(samples.rte_carton())
+    assert r["pages"][0]["detected"]["info_blocks"] == []

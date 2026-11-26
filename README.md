@@ -25,22 +25,29 @@ to zoom, drag to move, `+`/`-`/`0` keys, Esc to close.
    (`All`/Registration colour).
    `classify.py` sorts paths into cut / crease / guide / crop marks / annotation / art. If a file has no named
    dieline, a thin single-colour stroke group spanning the sheet is used and flagged "verify".
-2. **Size basis, in order:** PDF TrimBox → crop marks → dieline bounds → artwork extents (when the page has
+2. **Info / legend areas** (`infoblocks.py`): title blocks, legends and spec panels beside the product
+   (customer, job and die numbers, ink lists and swatches, a cut/crease key in the die colours, approval
+   boxes) are found from their wording ("Customer", "Die cut No", "Ink information", "Approved"...) sitting
+   clear of the die or trim, then grown over the frames, rules, swatches and labels around them. Everything
+   inside is left out of the dieline, crop marks and artwork extents, and shown as "Info areas" in the preview.
+   Small die-coloured marks away from the die (a 'Cutline' sample) are dropped too. Outlined (non-live) text
+   can't be read, but slugs outside the crop marks or die don't affect the size anyway.
+3. **Size basis, in order:** PDF TrimBox → crop marks → dieline bounds → artwork extents (when the page has
    white space round the art) → page size. White fills, clipped-away art, registration items and dieline notes
    don't count as artwork, so empty margins never inflate the size.
-3. **Product rules** (`dimensions.py`): carton L/W/D from the 4 alternating body panels (L, W, L, W) between
+4. **Product rules** (`dimensions.py`): carton L/W/D from the 4 alternating body panels (L, W, L, W) between
    score lines; pouch from the front | gusset | back layout (side by side, as in the Print Monkey setup guide, or
    stacked), or side-gusset front | gusset | back | gusset; label from the most common closed cut shape.
-4. **Printed callouts** (`textdims.py`): `8.00"x6.00"x2.00"`, `6.00" Width`, `Gusset: 2"`, `120mm x 80mm`…
+5. **Printed callouts** (`textdims.py`): `8.00"x6.00"x2.00"`, `6.00" Width`, `Gusset: 2"`, `120mm x 80mm`…
    A printed spec that matches the measurement raises confidence to high. Labels such as *Zipper Width*,
    *Seal Width* and *Width + Bleed* are ignored.
-5. **AI review** (`ai.py`, optional): Claude (`claude-opus-5-5`) gets a clean render, an annotated render and
+6. **AI review** (`ai.py`, optional): Claude (`claude-opus-5-5`) gets a clean render, an annotated render and
    the measured JSON. It returns structured JSON: product type, its own reading of the dimensions with the basis,
    any disagreements, a one-line summary for the quote, and questions for the customer. If the type was
    auto-detected and Claude names a different one, the measurement rules re-run with that type, so the numbers
    still come from geometry. If the AI call fails, the measured result is still returned.
 
-6. **Imposition** (`public/nesting.js`, runs in the browser, so settings update instantly):
+7. **Imposition** (`public/nesting.js`, runs in the browser, so settings update instantly):
    - *Folding cartons*: the die outline is filled into a bitmap (32 px/in), grown by half the gutter, and copies
      are dropped row by row as close as the outline allows: straight, staggered, or head-to-tail (every other row
      turned 180°), die as drawn or turned 90°. A free-form pass also places dies one by one, in any of four

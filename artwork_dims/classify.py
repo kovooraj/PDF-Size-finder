@@ -329,9 +329,12 @@ def union_bbox(paths: list[PathRec]) -> Rect | None:
     return bb
 
 
-def art_extents(c: Classified, geo: PageGeometry, text_boxes: list[Rect], media: Rect) -> Rect | None:
+def art_extents(c: Classified, geo: PageGeometry, text_boxes: list[Rect], media: Rect,
+                skip=None) -> Rect | None:
     """Visible artwork extents, ignoring dielines, marks, registration items,
-    white fills and anything clipped away."""
+    white fills and anything clipped away. `skip(rect)` -> True drops an image or text box
+    (used for info / legend blocks)."""
+    skip = skip or (lambda r: False)
     bb = None
     page_area = (media[2] - media[0]) * (media[3] - media[1])
     for p in c.art:
@@ -348,10 +351,11 @@ def art_extents(c: Classified, geo: PageGeometry, text_boxes: list[Rect], media:
         bb = rect_union(bb, vis)
     for im in geo.images:
         vis = rect_intersect(im.bbox, im.clip)
-        if vis and vis[2] > vis[0] and vis[3] > vis[1]:
+        if vis and vis[2] > vis[0] and vis[3] > vis[1] and not skip(vis):
             bb = rect_union(bb, vis)
     for t in text_boxes:
-        bb = rect_union(bb, t)
+        if not skip(t):
+            bb = rect_union(bb, t)
     if bb is not None:
         bb = rect_intersect(bb, media)
     return bb
