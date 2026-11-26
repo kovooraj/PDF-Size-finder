@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dimension Finder</title>
+<style>
+:root{
+  --bg:#f6f5f2;--panel:#fff;--ink:#1d1d1b;--muted:#6b6a66;--line:#e4e2dc;--accent:#1f6feb;
+  --ok:#1a7f37;--warn:#9a6700;--warn-bg:#fff8e5;--bad:#cf222e;--chip:#f0efeb;
+  --cut:#e60d1a;--crease:#ff8c00;--trim:#00a640;--marks:#0073ff;--art:#7333d9;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141413;--panel:#1e1e1c;--ink:#ecebe7;--muted:#a3a29c;--line:#34332f;--accent:#5b9dff;
+  --ok:#4ac26b;--warn:#d4a72c;--warn-bg:#2a2414;--bad:#ff6b6b;--chip:#2a2926;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:20px 24px 8px;max-width:1240px;margin:0 auto}
+header h1{margin:0;font-size:22px;letter-spacing:-.01em}
+header p{margin:4px 0 0;color:var(--muted)}
+main{max-width:1240px;margin:0 auto;padding:12px 24px 48px;display:grid;grid-template-columns:340px 1fr;gap:20px}
+@media (max-width:860px){main{grid-template-columns:1fr;padding:12px 16px 40px}header{padding:16px 16px 4px}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+label.drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:2px dashed var(--line);
+  border-radius:10px;padding:28px 12px;text-align:center;cursor:pointer;color:var(--muted)}
+label.drop.drag,label.drop:hover{border-color:var(--accent);color:var(--ink)}
+label.drop strong{color:var(--ink)}
+input[type=file]{display:none}
+.field{margin-top:16px}
+.field>span{display:block;font-weight:600;font-size:13px;margin-bottom:6px}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.seg button{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:9px 8px;border-radius:8px;cursor:pointer;font:inherit;font-size:14px}
+.seg button[aria-pressed=true]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--panel));font-weight:600}
+.seg button.wide{grid-column:span 2}
+.toggle{display:flex;gap:8px;align-items:center;font-size:14px}
+button.go{margin-top:18px;width:100%;padding:12px;border:0;border-radius:9px;background:var(--accent);color:#fff;font:600 15px system-ui;cursor:pointer}
+button.go:disabled{opacity:.5;cursor:default}
+.fname{margin-top:10px;font-size:13px;color:var(--muted);word-break:break-all}
+.empty{color:var(--muted);text-align:center;padding:60px 10px}
+.summary{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:10px}
+.ptype{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.dims{font-size:30px;font-weight:700;letter-spacing:-.02em;margin:2px 0 4px;font-variant-numeric:tabular-nums}
+.units{display:flex;gap:4px}
+.units button{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:4px 10px;cursor:pointer;font:inherit;font-size:13px}
+.units button[aria-pressed=true]{background:var(--ink);color:var(--panel)}
+.sales{margin-top:6px;padding:10px 12px;background:var(--chip);border-radius:8px;display:flex;gap:10px;align-items:flex-start;justify-content:space-between}
+.sales button{border:0;background:none;color:var(--accent);cursor:pointer;font:inherit;font-size:13px;white-space:nowrap}
+table{width:100%;border-collapse:collapse;margin-top:14px;font-size:14px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+td.num{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.conf{display:inline-block;font-size:12px;padding:1px 7px;border-radius:99px;background:var(--chip)}
+.conf.high{color:var(--ok)}.conf.medium{color:var(--warn)}.conf.low{color:var(--bad)}
+.alerts{margin-top:14px;display:grid;gap:8px}
+.alert{padding:10px 12px;border-radius:8px;font-size:14px;background:var(--warn-bg);border-left:3px solid var(--warn)}
+.alert.q{background:color-mix(in srgb,var(--accent) 9%,var(--panel));border-left-color:var(--accent)}
+.alert.n{background:var(--chip);border-left-color:var(--line)}
+.alert.err{border-left-color:var(--bad)}
+.grid2{display:grid;grid-template-columns:1.2fr 1fr;gap:18px;margin-top:16px}
+@media (max-width:1100px){.grid2{grid-template-columns:1fr}}
+.preview{background:repeating-conic-gradient(var(--chip) 0 25%,var(--panel) 0 50%) 0 0/16px 16px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.preview img{display:block;width:100%;height:auto}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:16px;height:0;border-top:2px solid;vertical-align:middle;margin-right:5px}
+.tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.tabs button{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:7px;padding:5px 12px;cursor:pointer;font:inherit;font-size:13px}
+.tabs button[aria-selected=true]{border-color:var(--ink);font-weight:600}
+details{margin-top:14px;font-size:13px}
+details pre{white-space:pre-wrap;word-break:break-word;background:var(--chip);padding:10px;border-radius:8px;max-height:360px;overflow:auto}
+h3{font-size:14px;margin:18px 0 4px}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:s .8s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Dimension Finder</h1>
+  <p>Upload customer artwork. We read the dieline, trim box and crop marks, ignore white space, and work out the size.</p>
+</header>
+<main>
+  <section class="card" aria-label="Upload">
+    <label class="drop" id="drop" for="file">
+      <strong>Drop a PDF here</strong>
+      <span>or click to choose · up to 50 MB</span>
+    </label>
+    <input type="file" id="file" accept="application/pdf,.pdf">
+    <div class="fname" id="fname"></div>
+    <div class="field">
+      <span>Product</span>
+      <div class="seg" id="ptype" role="group" aria-label="Product type">
+        <button type="button" data-v="auto" aria-pressed="true" class="wide">Auto-detect</button>
+        <button type="button" data-v="pouch" aria-pressed="false">Pouch</button>
+        <button type="button" data-v="folding_carton" aria-pressed="false">Folding carton</button>
+        <button type="button" data-v="roll_label" aria-pressed="false">Roll label</button>
+        <button type="button" data-v="commercial" aria-pressed="false">Commercial print</button>
+      </div>
+    </div>
+    <div class="field">
+      <label class="toggle"><input type="checkbox" id="ai" checked> AI review (reads the artwork and checks the numbers)</label>
+    </div>
+    <button class="go" id="go" disabled>Find dimensions</button>
+  </section>
+
+  <section class="card" id="out" aria-live="polite">
+    <div class="empty">Results appear here.</div>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+let file = null, ptype = "auto", unit = "in", data = null, pageIdx = 0;
+try { unit = localStorage.getItem("dimUnit") || "in"; } catch {}
+
+const LABEL = {width:"Width",height:"Height",gusset:"Gusset",length:"Length",depth:"Depth",flat_width:"Flat width",flat_height:"Flat height"};
+const TYPE = {pouch:"Pouch",folding_carton:"Folding carton",roll_label:"Roll label",commercial:"Commercial print"};
+const ORDER = {pouch:["width","height","gusset"],folding_carton:["length","width","depth"],roll_label:["width","height"],commercial:["width","height"]};
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function fmt(inches){
+  if (inches == null) return "–";
+  if (unit === "mm") return (inches*25.4).toFixed(1) + " mm";
+  const r = Math.round(inches*1000)/1000;
+  const s = Math.round(inches*16)/16;
+  const frac = Math.abs(s - inches) < 0.004 ? toFrac(s) : null;
+  return (frac && frac !== String(r) ? `${r}″ (${frac}″)` : `${r}″`);
+}
+function toFrac(v){
+  const w = Math.floor(v), n = Math.round((v-w)*16);
+  if (!n) return String(w);
+  let num=n, den=16; while(num%2===0){num/=2;den/=2}
+  return (w? w+" ":"") + num + "/" + den;
+}
+const short = v => v==null ? "?" : unit==="mm" ? (v*25.4).toFixed(1) : String(Math.round(v*1000)/1000);
+
+function setFile(f){
+  file = f; $("#fname").textContent = f ? f.name : ""; $("#go").disabled = !f;
+}
+$("#file").addEventListener("change", e => setFile(e.target.files[0] || null));
+const drop = $("#drop");
+["dragenter","dragover"].forEach(t => drop.addEventListener(t, e => {e.preventDefault(); drop.classList.add("drag")}));
+["dragleave","drop"].forEach(t => drop.addEventListener(t, e => {e.preventDefault(); drop.classList.remove("drag")}));
+drop.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if (f) setFile(f); });
+$("#ptype").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  ptype = b.dataset.v;
+  document.querySelectorAll("#ptype button").forEach(x => x.setAttribute("aria-pressed", x===b));
+});
+
+$("#go").addEventListener("click", async () => {
+  if (!file) return;
+  const go = $("#go"); go.disabled = true;
+  go.innerHTML = `<span class="spin"></span>${$("#ai").checked ? "Measuring and reviewing…" : "Measuring…"}`;
+  $("#out").innerHTML = `<div class="empty"><span class="spin"></span>Reading ${esc(file.name)}…</div>`;
+  const fd = new FormData(); fd.append("file", file); fd.append("product_type", ptype); fd.append("use_ai", $("#ai").checked);
+  try {
+    const r = await fetch("/api/analyze", {method:"POST", body:fd});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || "Something went wrong.");
+    data = j; pageIdx = 0; render();
+  } catch (err) {
+    $("#out").innerHTML = `<div class="alert err">${esc(err.message)}</div>`;
+  } finally { go.disabled = false; go.textContent = "Find dimensions"; }
+});
+
+function render(){
+  const p = data.pages[pageIdx], res = p.result, ai = p.ai_review || null;
+  const order = ORDER[res.product_type] || Object.keys(res.fields);
+  const main = order.filter(k => res.fields[k]).map(k => short(res.fields[k].value_in));
+  const unitLabel = unit==="mm" ? " mm" : "″";
+  const flat = res.fields.flat_width ? `Flat ${short(res.fields.flat_width.value_in)} × ${short(res.fields.flat_height.value_in)}${unitLabel}` : "";
+  const names = order.filter(k => res.fields[k]).map(k => LABEL[k][0]).join(" × ");
+  const tabs = data.pages.length > 1 ? `<div class="tabs" role="tablist">${data.pages.map((pg,i)=>`<button role="tab" aria-selected="${i===pageIdx}" data-i="${i}">Page ${pg.page}</button>`).join("")}${data.page_count>data.pages_analyzed?`<span style="font-size:12px;color:var(--muted);align-self:center">First ${data.pages_analyzed} of ${data.page_count} pages</span>`:""}</div>` : "";
+  const rows = Object.entries(res.fields).map(([k,f]) => `<tr><td>${LABEL[k]||k}</td><td class="num">${fmt(f.value_in)}</td><td>${esc(f.source)}</td><td><span class="conf ${f.confidence}">${f.confidence}</span></td></tr>`).join("");
+  const aiRows = ai && !ai.error ? ai.dimensions.map(d => {
+    const m = res.fields[d.name]; const diff = m && Math.abs(m.value_in - d.value_in) > Math.max(0.04, 0.03*m.value_in);
+    return `<tr><td>${LABEL[d.name]||d.name}</td><td class="num"${diff?' style="color:var(--bad)"':""}>${fmt(d.value_in)}</td><td>${esc(d.source)}</td><td><span class="conf ${d.confidence}">${d.confidence}</span></td></tr>`;
+  }).join("") : "";
+  const alerts = [
+    ...(ai && ai.error ? [`<div class="alert err">${esc(ai.error)}</div>`] : []),
+    ...(ai && !ai.error && !ai.agrees_with_measurement ? ai.disagreements.map(d => `<div class="alert err"><b>AI disagrees:</b> ${esc(d)}</div>`) : []),
+    ...res.warnings.map(w => `<div class="alert">${esc(w)}</div>`),
+    ...[...res.questions, ...(ai && !ai.error ? ai.questions_for_customer : [])].map(q => `<div class="alert q"><b>Ask the customer:</b> ${esc(q)}</div>`),
+    ...res.notes.map(n => `<div class="alert n">${esc(n)}</div>`),
+    ...(ai && !ai.error ? ai.artwork_observations.map(n => `<div class="alert n">${esc(n)}</div>`) : []),
+  ].join("");
+  const sb = res.size_basis || {}, ws = sb.whitespace;
+  const det = p.detected;
+  const found = [
+    `Page ${fmt(p.boxes_in.media.width)} × ${fmt(p.boxes_in.media.height)}`,
+    p.boxes_in.trim ? `TrimBox ${fmt(p.boxes_in.trim.width)} × ${fmt(p.boxes_in.trim.height)}` : "No TrimBox",
+    det.trim_marks ? `${det.trim_marks} crop-mark strokes` : "No crop marks",
+    det.dieline_source !== "none" ? `Dieline: ${det.dieline_names.join(", ") || det.dieline_source} (${det.cut_paths} cut, ${det.crease_paths} crease paths)` : "No dieline",
+    ws ? `Artwork extents ${fmt(ws.art_bbox_in.width)} × ${fmt(ws.art_bbox_in.height)}` : "",
+    det.raster_only ? "Flat image only (no vector data)" : "",
+  ].filter(Boolean).map(s => `<li>${s}</li>`).join("");
+  const salesLine = ai && !ai.error ? ai.summary_for_sales : `${TYPE[res.product_type]}, ${order.filter(k=>res.fields[k]).map(k=>`${short(res.fields[k].value_in)}${unitLabel} ${LABEL[k]}`).join(" × ")}`;
+
+  $("#out").innerHTML = `${tabs}
+    <div class="summary">
+      <div>
+        <div class="ptype">${TYPE[res.product_type]} · ${esc(res.product_type_source)}</div>
+        <div class="dims">${main.join(" × ")}${unitLabel} <span style="font-size:15px;font-weight:500;color:var(--muted)">${names}</span></div>
+        ${flat ? `<div style="color:var(--muted)">${flat}</div>` : ""}
+      </div>
+      <div class="units" role="group" aria-label="Units"><button data-u="in" aria-pressed="${unit==="in"}">in</button><button data-u="mm" aria-pressed="${unit==="mm"}">mm</button></div>
+    </div>
+    <div class="sales"><span id="salesline">${esc(salesLine)}</span><button id="copy">Copy</button></div>
+    <div class="alerts">${alerts}</div>
+    <div class="grid2">
+      <div>
+        <div class="preview"><img alt="Artwork with detected lines" src="data:image/png;base64,${p.preview_png_b64}"></div>
+        <div class="legend"><span><i style="border-color:var(--cut)"></i>Cut</span><span><i style="border-top-style:dashed;border-color:var(--crease)"></i>Crease / fold</span><span><i style="border-top-style:dashed;border-color:var(--trim)"></i>Size used</span><span><i style="border-color:var(--marks)"></i>Crop marks</span><span><i style="border-top-style:dotted;border-color:var(--art)"></i>Artwork extents</span></div>
+      </div>
+      <div>
+        <h3>Measured from the file</h3>
+        <table><thead><tr><th>Dimension</th><th>Value</th><th>From</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+        ${aiRows ? `<h3>AI review</h3><table><thead><tr><th>Dimension</th><th>Value</th><th>Basis</th><th></th></tr></thead><tbody>${aiRows}</tbody></table>` : ""}
+        <h3>What we found</h3><ul style="margin:4px 0;padding-left:18px;font-size:14px">${found}</ul>
+        <details><summary>Raw data</summary><pre>${esc(JSON.stringify({...p, preview_png_b64: "(image)"}, null, 1))}</pre></details>
+      </div>
+    </div>`;
+  document.querySelectorAll(".units button").forEach(b => b.onclick = () => { unit = b.dataset.u; try{localStorage.setItem("dimUnit", unit)}catch{} render(); });
+  document.querySelectorAll(".tabs button[data-i]").forEach(b => b.onclick = () => { pageIdx = +b.dataset.i; render(); });
+  $("#copy").onclick = async () => { try { await navigator.clipboard.writeText($("#salesline").textContent); $("#copy").textContent = "Copied"; } catch {} };
+}
+</script>
+</body>
+</html>
