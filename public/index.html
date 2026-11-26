@@ -1069,6 +1069,7 @@ function sheetHTML(item, out, cfg){
       <span class="sub">${r.ups ? esc(r.layout) + (r.turned90 ? " · turned 90°" : "") : "Doesn't fit on this sheet"}</span>
       ${r.ups ? `<span class="sub num">${Math.round(r.utilisation*100)}% of the sheet used</span>` : ""}
       ${r.ups > r.straightUps ? `<span class="gain num">+${r.ups - r.straightUps} vs straight rows (${r.straightUps} up)</span>` : ""}
+      ${r.tighterGutter ? `<span class="sub num" style="color:var(--warn)">${r.tighterGutter.ups} up with a 1/16″ gutter</span>` : ""}
       ${r.otherFeed ? `<span class="sub num" style="color:var(--warn)">${r.otherFeed.ups} up if the gripper is on the ${trimNum(r.otherFeed.gripperEdge, 4)}″ edge</span>` : ""}
     </button>`).join("");
   const r = out[sel], g = cfg.gutter[item.gutterKey];

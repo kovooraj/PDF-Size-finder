@@ -264,3 +264,20 @@ def test_carton_with_scores_in_cut_colour_and_aligned_slits():
     f = fields(r)
     assert (f["length"], f["width"], f["depth"]) == pytest.approx((6.0, 4.6, 11.8), abs=0.01)
     assert res["panels"]["glue_flap_in"] == pytest.approx(0.48, abs=0.01)
+
+
+def test_dieline_swatch_in_a_legend_does_not_widen_the_die():
+    # Like the Trader Joe's skewer carton: a short 'Cutline' sample in the legend is drawn in
+    # the cutter colour well away from the die. It must not count towards the flat size.
+    import io
+    import pikepdf
+    base = run(samples.rte_carton(L=3.0, W=2.0, D=6.0))
+    pdf = pikepdf.open(io.BytesIO(samples.rte_carton(L=3.0, W=2.0, D=6.0)))
+    pg = pdf.pages[0]
+    mb = [float(v) for v in pg.obj.MediaBox]
+    pg.obj.MediaBox = [mb[0] - 400, mb[1], mb[2], mb[3]]  # room on the left for a legend
+    pg.contents_add(pdf.make_stream(f"q /Die CS 1 SCN 0.5 w {mb[0] - 380} 100 m {mb[0] - 330} 100 l S Q".encode()))
+    out = io.BytesIO(); pdf.save(out)
+    r = run(out.getvalue())
+    assert fields(r)["flat_width"] == pytest.approx(fields(base)["flat_width"], abs=0.01)
+    assert fields(r)["length"] == pytest.approx(3.0, abs=0.01)

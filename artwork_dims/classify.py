@@ -194,7 +194,61 @@ def classify(geo: PageGeometry, media: Rect) -> Classified:
                 f"{key[1]} as the dieline (verify)."
             )
 
+    _drop_stray_die_marks(c)
     return c
+
+
+def _drop_stray_die_marks(c: Classified, gap: float = 9.0) -> None:
+    """Legends and swatches ('Cutline', 'Fold') are often drawn in the die spot colours away
+    from the die. Group cut + fold paths that touch (within `gap` points) and drop small groups
+    that sit clear of the main die, so they don't widen the die bounds."""
+    paths = [("cut", p) for p in c.cut] + [("crease", p) for p in c.crease]
+    if len(paths) < 3:
+        return
+    parent = list(range(len(paths)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    boxes = [p.bbox for _, p in paths]
+    order = sorted(range(len(paths)), key=lambda i: boxes[i][0])
+    for a_i, a in enumerate(order):  # sweep on x so this stays fast with thousands of paths
+        ax0, ay0, ax1, ay1 = boxes[a]
+        for b in order[a_i + 1:]:
+            bx0, by0, bx1, by1 = boxes[b]
+            if bx0 > ax1 + gap:
+                break
+            if by0 <= ay1 + gap and ay0 <= by1 + gap:
+                parent[find(a)] = find(b)
+    groups: dict[int, list[int]] = defaultdict(list)
+    for i in range(len(paths)):
+        groups[find(i)].append(i)
+    length = {g: sum(s.length for i in ids for s in paths[i][1].segments) for g, ids in groups.items()}
+    main = max(groups, key=lambda g: length[g])
+    mb = None
+    for i in groups[main]:
+        mb = rect_union(mb, boxes[i])
+    drop: set[int] = set()
+    for g, ids in groups.items():
+        if g == main or length[g] >= 0.15 * length[main]:
+            continue
+        gb = None
+        for i in ids:
+            gb = rect_union(gb, boxes[i])
+        clear = gb[2] < mb[0] - 2 * gap or gb[0] > mb[2] + 2 * gap or gb[3] < mb[1] - 2 * gap or gb[1] > mb[3] + 2 * gap
+        if clear:
+            drop.update(ids)
+    if not drop:
+        return
+    dropped = [paths[i][1] for i in sorted(drop)]
+    c.cut = [p for i, (k, p) in enumerate(paths) if k == "cut" and i not in drop]
+    c.crease = [p for i, (k, p) in enumerate(paths) if k == "crease" and i not in drop]
+    c.annotations.extend(dropped)
+    c.notes.append(f"Ignored {len(dropped)} dieline-coloured mark{'s' if len(dropped) != 1 else ''} away from the die "
+                   "(legend or swatch).")
 
 
 def _looks_like_pure_colour(cs: str, color: tuple[float, ...]) -> bool:

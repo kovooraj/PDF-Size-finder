@@ -459,6 +459,11 @@
         const alt = one({ ...sheet, w: sheet.h, h: sheet.w });
         if (alt.ups > res.ups) res.otherFeed = { ups: alt.ups, gripperEdge: sheet.h };
       }
+      if (opts.tryTighter !== false && gutter > 1 / 16) {
+        // Near misses: would a 1/16" gutter fit more? Worth asking prepress about.
+        const tight = nestSheets(die, [sheet], 1 / 16, { ...opts, tryTighter: false, tryOtherFeed: false })[0];
+        if (tight.ups > res.ups) res.tighterGutter = { ups: tight.ups, gutter: 1 / 16 };
+      }
       return res;
     });
   }
