@@ -52,6 +52,12 @@ def index():
     return RedirectResponse("/index.html")
 
 
+@app.get("/nesting.js", include_in_schema=False)
+def nesting_js():
+    # Vercel's CDN serves public/; this covers local runs.
+    return FileResponse(PAGE.parent / "nesting.js", media_type="text/javascript")
+
+
 @app.get("/api/config")
 def config():
     return {

@@ -40,6 +40,16 @@ to zoom, drag to move, `+`/`-`/`0` keys, Esc to close.
    auto-detected and Claude names a different one, the measurement rules re-run with that type, so the numbers
    still come from geometry. If the AI call fails, the measured result is still returned.
 
+6. **Imposition** (`public/nesting.js`, runs in the browser, so settings update instantly):
+   - *Folding cartons*: the die outline is filled into a bitmap (32 px/in), grown by half the gutter, and copies
+     are dropped row by row as close as the outline allows: straight, staggered, or head-to-tail (every other row
+     turned 180°), die as drawn or turned 90°. The layout with the most ups on the usable sheet wins.
+   - *Commercial print*: exact rectangle fill, mixing turned pieces into the leftover strip.
+   - *Sheets* (editable, saved per browser): 28 × 40 and 24 × 36 offset (gripper 0.5″, tail 0.375″, sides
+     0.25″), 20.8125 × 29.5 digital (gripper 0.375″, tail and sides 0.25″). Gutter 0.25″.
+   - *Pouches*: 30″ web, 29″ usable, lanes 0.25″ apart, 0.125″ along the web.
+   - *Roll labels*: 13″ web, 12″ usable, 0.125″ gaps.
+
 ## Run locally
 
 ```bash
@@ -47,6 +57,7 @@ pip install -r requirements-dev.txt
 export ANTHROPIC_API_KEY=...        # optional; without it only the measurement pass runs
 uvicorn app:app --port 8000         # open http://localhost:8000
 python -m pytest -q
+node --test tests/js/nesting.test.js
 ```
 
 ## Deploy on Vercel

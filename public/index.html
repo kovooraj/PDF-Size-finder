@@ -245,6 +245,42 @@ dl.kv dt{color:var(--muted)}
 pre.raw{white-space:pre-wrap;word-break:break-word;background:var(--panel-2);border:1px solid var(--line);padding:12px;border-radius:10px;max-height:460px;overflow:auto;font-size:12px}
 .aisum{margin:12px 0 4px;padding:12px 14px;border-radius:10px;background:var(--panel-2);border:1px solid var(--line)}
 
+/* ---------- imposition / nesting */
+.nest{padding:0;overflow:hidden}
+.nest-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 16px;border-bottom:1px solid var(--line)}
+.nest-head h2{margin:0;font-size:15px;font-weight:650;letter-spacing:-.01em}
+.nest-head .spacer{flex:1}
+.nest-body{padding:16px;display:grid;gap:16px}
+.nest-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.ncard{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2);cursor:pointer;text-align:left;transition:.12s;min-width:0}
+.ncard:hover{border-color:var(--line-2)}
+.ncard[aria-pressed=true]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:var(--accent-soft)}
+.ncard .nm{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;width:100%}
+.ncard .press{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line-2);border-radius:5px;padding:0 5px}
+.ncard .press.digital{color:var(--flat);border-color:color-mix(in srgb,var(--flat) 50%,var(--line))}
+.ncard .ups{font-size:30px;font-weight:750;letter-spacing:-.02em;line-height:1.15}
+.ncard .ups small{font-size:15px;font-weight:600;color:var(--ink-2);margin-left:4px}
+.ncard .sub{font-size:12.5px;color:var(--muted);line-height:1.35}
+.ncard .gain{font-size:12px;font-weight:650;color:var(--ok)}
+.ncard.best .nm::after{content:"Most ups";margin-left:auto;font-size:10.5px;font-weight:700;color:var(--ok);background:var(--ok-soft);border-radius:99px;padding:1px 7px}
+.nest-fig{border:1px solid var(--line);border-radius:12px;background:#fff;padding:14px;color-scheme:light}
+.nest-fig svg{display:block;width:100%;height:auto;max-height:62vh}
+.nest-fig .cap{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:#55595f;margin-top:10px}
+.nest-fig .cap i{display:inline-block;width:12px;height:10px;border-radius:2px;vertical-align:-1px;margin-right:5px}
+.nest-notes{margin:0;padding-left:18px;font-size:12.5px;color:var(--muted);display:grid;gap:3px}
+.nest-cfg{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--panel-2);display:grid;gap:12px}
+.nest-cfg .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+.nest-cfg label{display:grid;gap:4px;font-size:12px;font-weight:600;color:var(--ink-2)}
+.nest-cfg input,.nest-cfg select{font:inherit;font-size:13px;width:92px;padding:6px 8px;border:1px solid var(--line-2);border-radius:8px;background:var(--panel);color:var(--ink)}
+.nest-cfg input.name{width:150px}
+.nest-cfg table{font-size:13px}
+.nest-cfg td,.nest-cfg th{padding:4px 6px;border:0;text-align:left;white-space:nowrap}
+.nest-cfg th{font-size:11.5px;color:var(--muted);font-weight:600}
+.nest-cfg .tw{overflow-x:auto}
+.nest-cfg .x{border:0;background:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px}
+.nest-cfg .x:hover{color:var(--bad)}
+.nest-wait{padding:26px;text-align:center;color:var(--muted)}
+
 /* ---------- gusset question */
 .modal-back{position:fixed;inset:0;z-index:60;background:rgba(10,10,12,.55);display:grid;place-items:center;padding:16px}
 .modal-back[hidden]{display:none}
@@ -374,6 +410,7 @@ pre.raw{white-space:pre-wrap;word-break:break-word;background:var(--panel-2);bor
   <div class="vstage" id="vStage"><div class="vhelp">Scroll or pinch to zoom · drag to move · Esc to close</div></div>
 </div>
 
+<script src="nesting.js"></script>
 <script>
 "use strict";
 const $ = s => document.querySelector(s);
@@ -870,7 +907,9 @@ function renderResult(){
         ${[["measure","Measurements"], ...(ai && !ai.error ? [["ai","AI review"]] : []), ["file","File details"], ["raw","Raw data"]].map(([k, n]) => `<button role="tab" data-tab="${k}" aria-selected="${detailTab===k}">${n}</button>`).join("")}
       </div>
       <div class="tabpanel" id="tabpanel"></div>
-    </section>`;
+    </section>
+
+    <section class="card nest" id="nest" aria-label="Imposition and nesting"></section>`;
 
   // preview
   const stage = $("#stage");
@@ -903,6 +942,7 @@ function renderResult(){
   $("#copy").onclick = async () => { try { await navigator.clipboard.writeText($("#salesline").textContent); $("#copy").lastChild.textContent = "Copied"; setTimeout(() => $("#copy") && ($("#copy").lastChild.textContent = "Copy"), 1500); } catch {} };
   document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { detailTab = b.dataset.tab; document.querySelectorAll("[data-tab]").forEach(x => x.setAttribute("aria-selected", x === b)); renderTab(); });
   renderTab();
+  renderNest();
 }
 
 function renderTab(){
@@ -938,6 +978,214 @@ function renderTab(){
     const copy = JSON.parse(JSON.stringify(page)); copy.view.image_b64 = "(image omitted)";
     copy.view.overlay = {...copy.view.overlay, cut: `(${copy.view.overlay.cut.length} segments)`, crease: `(${copy.view.overlay.crease.length} segments)`, marks: `(${copy.view.overlay.marks.length} segments)`};
     P.innerHTML = `<pre class="raw">${esc(JSON.stringify(copy, null, 1))}</pre>`;
+  }
+}
+
+// ---------- imposition / nesting (maths in nesting.js)
+const NEST_KEY = "dimNestCfg.v1";
+const clone = o => JSON.parse(JSON.stringify(o));
+function nestCfg(){
+  const d = Nesting.DEFAULTS, c = store.get(NEST_KEY, null) || {};
+  return {sheets: c.sheets && c.sheets.length ? c.sheets : clone(d.sheets),
+          gutter: {...d.gutter, ...(c.gutter || {})},
+          web: {pouch: {...d.web.pouch, ...((c.web || {}).pouch || {})}, roll_label: {...d.web.roll_label, ...((c.web || {}).roll_label || {})}}};
+}
+let nestOpen = false, nestPick = {}, nestCache = new Map();
+const uIn = v => unit === "mm" ? trimNum(v*25.4, 1) : trimNum(v, 4);     // inches -> input text
+const inU = t => { const v = parseFloat(t); return isFinite(v) && v >= 0 ? (unit === "mm" ? v/25.4 : v) : NaN; };
+const uLbl = () => unit === "mm" ? "mm" : "in";
+
+function nestItem(page){
+  const res = page.result, F = k => res.fields[k] && res.fields[k].value_in;
+  if (res.product_type === "folding_carton") {
+    const fw = F("flat_width") || (res.size_basis && res.size_basis.trim_in.width), fh = F("flat_height") || (res.size_basis && res.size_basis.trim_in.height);
+    if (!fw || !fh) return null;
+    if (!page._die) page._die = Nesting.dieFromOverlay(page.view.overlay, fw, fh);
+    return {kind: "sheet", die: page._die, gutterKey: "folding_carton"};
+  }
+  if (res.product_type === "commercial") {
+    if (!F("width") || !F("height")) return null;
+    return {kind: "sheet", die: Nesting.rectDie(F("width"), F("height")), gutterKey: "commercial"};
+  }
+  if (res.product_type === "pouch") {
+    const fl = flatSize(res);
+    const w = fl ? fl.w : F("width"), h = fl ? fl.h : F("height");
+    return w && h ? {kind: "web", w, h, webKey: "pouch", flat: !!fl} : null;
+  }
+  if (res.product_type === "roll_label") return F("width") && F("height") ? {kind: "web", w: F("width"), h: F("height"), webKey: "roll_label"} : null;
+  return null;
+}
+
+function renderNest(){
+  const host = $("#nest"); if (!host) return;
+  const page = data.pages[pageIdx], res = page.result, item = nestItem(page), cfg = nestCfg();
+  const what = {folding_carton: "cartons per sheet", commercial: "pieces per sheet", pouch: "pouches across the web", roll_label: "labels across the web"}[res.product_type];
+  host.innerHTML = `<div class="nest-head"><h2>Imposition</h2><span class="beta" title="Layouts are a planning estimate. Prepress confirms the final imposition.">Beta</span>
+      <span class="muted">${what || ""}</span><div class="spacer"></div>
+      ${item ? `<button class="btn" id="nestCfgBtn" aria-expanded="${nestOpen}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>${item.kind === "sheet" ? "Sheets & spacing" : "Web & spacing"}</button>` : ""}</div>
+    <div class="nest-body" id="nestBody">${item ? `<div class="nest-wait">Working out the layouts…</div>` : `<div class="nest-wait">We need the product size before we can lay it out.</div>`}</div>`;
+  if (!item) return;
+  $("#nestCfgBtn").onclick = () => { nestOpen = !nestOpen; renderNest(); };
+  const key = JSON.stringify([pageIdx, res.product_type, item.kind === "sheet" ? [item.die.w, item.die.h, item.die.source, cfg.sheets, cfg.gutter[item.gutterKey]] : [item.w, item.h, cfg.web[item.webKey]]]);
+  const draw = out => {
+    if (!$("#nestBody")) return;
+    $("#nestBody").innerHTML = (nestOpen ? nestCfgHTML(item, cfg) : "") + (item.kind === "sheet" ? sheetHTML(item, out, cfg) : webHTML(item, out, cfg));
+    wireNest(item, out, cfg);
+  };
+  if (nestCache.has(key)) return draw(nestCache.get(key));
+  setTimeout(() => {
+    const out = item.kind === "sheet" ? Nesting.nestSheets(item.die, cfg.sheets, cfg.gutter[item.gutterKey]) : Nesting.nestWeb(item.w, item.h, cfg.web[item.webKey]);
+    nestCache.set(key, out);
+    draw(out);
+  }, 30);
+}
+
+function sheetHTML(item, out, cfg){
+  const max = Math.max(...out.map(r => r.ups));
+  const pickKey = item.gutterKey, sel = Math.min(nestPick[pickKey] ?? out.findIndex(r => r.ups === max), out.length - 1);
+  const cards = out.map((r, i) => `<button type="button" class="ncard${r.ups === max && max > 0 ? " best" : ""}" data-n="${i}" aria-pressed="${i === sel}">
+      <span class="nm">${esc(r.sheet.name)}″ <span class="press ${r.sheet.press.toLowerCase()}">${esc(r.sheet.press)}</span></span>
+      <span class="ups num">${r.ups}<small>up</small></span>
+      <span class="sub">${r.ups ? esc(r.layout) + (r.turned90 ? " · turned 90°" : "") : "Doesn't fit on this sheet"}</span>
+      ${r.ups ? `<span class="sub num">${Math.round(r.utilisation*100)}% of the sheet used</span>` : ""}
+      ${r.ups > r.straightUps ? `<span class="gain num">+${r.ups - r.straightUps} vs straight rows (${r.straightUps} up)</span>` : ""}
+    </button>`).join("");
+  const r = out[sel], g = cfg.gutter[item.gutterKey];
+  const notes = [
+    `Gutter ${fmt(g)} between ${item.gutterKey === "commercial" ? "pieces" : "dies"}; gripper, tail and side margins come off each sheet first (change them in ${"Sheets & spacing"}).`,
+    item.die.source === "dieline" && !r.openOutline ? "Nested from the actual dieline outline, so flaps can tuck into each other." :
+      item.gutterKey === "folding_carton" ? "Laid out as rectangles (flat size): the dieline outline couldn't be traced, so real nesting may fit more." : "",
+    item.gutterKey === "folding_carton" ? "Check board grain direction before quoting: the best layout may turn the carton 90°." : "",
+    "Planning estimate. Prepress confirms the final imposition, die layout and press marks.",
+  ].filter(Boolean);
+  return `<div class="nest-cards">${cards}</div>${r && r.ups ? sheetSVG(item, r) : ""}<ul class="nest-notes">${notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>`;
+}
+
+// Filled die silhouette as a PNG (one per turn), so the drawing shows the board each die takes.
+const pngCache = new WeakMap();
+function maskPng(mask, k){
+  let per = pngCache.get(mask); if (!per) pngCache.set(mask, per = {});
+  if (per[k] !== undefined) return per[k];
+  try {
+    const m = Nesting.rotate(mask, k), c = document.createElement("canvas"); c.width = m.w; c.height = m.h;
+    const ctx = c.getContext("2d"), img = ctx.createImageData(m.w, m.h);
+    for (let i = 0; i < m.data.length; i++) if (m.data[i]) { img.data[i*4] = 0xe9; img.data[i*4+1] = 0xef; img.data[i*4+2] = 0xfd; img.data[i*4+3] = 255; }
+    ctx.putImageData(img, 0, 0);
+    per[k] = c.toDataURL("image/png");
+  } catch { per[k] = null; }
+  return per[k];
+}
+function sheetSVG(item, r){
+  const s = r.sheet, die = item.die, ux = s.side, uy = s.gripper;
+  const ks = [...new Set(r.placements.map(p => p.k))];
+  const segPathD = segs => segs.map(q => q.length >= 8 ? `M${q[0]} ${q[1]}C${q[4]} ${q[5]} ${q[6]} ${q[7]} ${q[2]} ${q[3]}` : `M${q[0]} ${q[1]}L${q[2]} ${q[3]}`).join("");
+  const defs = ks.map(k => {
+    const segs = Nesting.turnSegs(die.segs, r.box.w, r.box.h, k, r.bitmapOffset.x, r.bitmapOffset.y);
+    const bw = k % 2 ? r.box.h : r.box.w, bh = k % 2 ? r.box.w : r.box.h;
+    const png = r.mask && maskPng(r.mask, k);
+    const fill = png ? `<image href="${png}" x="0" y="0" width="${bw}" height="${bh}" preserveAspectRatio="none"/>` : `<rect width="${bw}" height="${bh}" fill="#e9effd"/>`;
+    return `<g id="nd${k}">${fill}<path d="${segPathD(segs)}" fill="none" stroke="#e5484d" stroke-width="1.2" vector-effect="non-scaling-stroke"/></g>`;
+  }).join("");
+  const uses = r.placements.map(p => `<use href="#nd${p.k}" x="${ux + p.x}" y="${uy + p.y}"/>`).join("");
+  const pad = Math.max(s.w, s.h) * 0.06, fs = Math.max(s.w, s.h) * 0.022;
+  return `<figure class="nest-fig" style="margin:0"><svg viewBox="${-pad} ${-pad} ${s.w + 2*pad} ${s.h + 2*pad}" role="img" aria-label="${r.ups} up on a ${esc(s.name)} inch sheet">
+      <defs>${defs}<pattern id="hatch" width="${fs*.6}" height="${fs*.6}" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="${fs*.6}" stroke="#c9c7c0" stroke-width="${fs*.12}"/></pattern></defs>
+      <rect x="0" y="0" width="${s.w}" height="${s.h}" fill="#fff" stroke="#55595f" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+      <rect x="0" y="0" width="${s.w}" height="${s.gripper}" fill="url(#hatch)"/>
+      <rect x="0" y="${s.h - s.tail}" width="${s.w}" height="${s.tail}" fill="url(#hatch)"/>
+      <rect x="0" y="0" width="${s.side}" height="${s.h}" fill="url(#hatch)"/><rect x="${s.w - s.side}" y="0" width="${s.side}" height="${s.h}" fill="url(#hatch)"/>
+      <rect x="${ux}" y="${uy}" width="${r.usable.w}" height="${r.usable.h}" fill="none" stroke="#16a34a" stroke-width="1" stroke-dasharray="6 4" vector-effect="non-scaling-stroke"/>
+      ${uses}
+      <text x="${s.w/2}" y="${-pad*.35}" font-size="${fs}" text-anchor="middle" fill="#3d4046" font-family="system-ui,sans-serif" font-weight="600">${trimNum(s.w, 4)}″ · gripper edge</text>
+      <text x="${-pad*.35}" y="${s.h/2}" font-size="${fs}" text-anchor="middle" fill="#3d4046" font-family="system-ui,sans-serif" font-weight="600" transform="rotate(-90 ${-pad*.35} ${s.h/2})">${trimNum(s.h, 4)}″</text>
+    </svg>
+    <figcaption class="cap"><span><i style="background:#e9effd;border:1px solid #e5484d"></i>${item.die.source === "dieline" && r.outline === "dieline" ? "Die (outline from the file)" : "Piece"}</span><span><i style="border:1px dashed #16a34a"></i>Usable area</span><span><i style="background:repeating-linear-gradient(45deg,#c9c7c0 0 2px,#fff 2px 5px)"></i>Gripper ${fmt(s.gripper)} · tail ${fmt(s.tail)} · sides ${fmt(s.side)}</span><span class="num">${r.ups} up · ${Math.round(r.utilisation*100)}% used</span></figcaption></figure>`;
+}
+
+function webHTML(item, out, cfg){
+  const w = cfg.web[item.webKey], noun = item.webKey === "pouch" ? "pouch" : "label";
+  const sel = Math.min(nestPick[item.webKey] ?? 0, out.length - 1);
+  const cards = out.map((o, i) => `<button type="button" class="ncard${i === 0 && o.lanes ? " best" : ""}" data-n="${i}" aria-pressed="${i === sel}">
+      <span class="nm">${o.turned ? "Turned 90°" : "As drawn"}</span>
+      <span class="ups num">${o.lanes}<small>${o.lanes === 1 ? "lane" : "lanes"}</small></span>
+      <span class="sub num">${fmt(o.across)} across · repeat ${fmt(o.repeat)}</span>
+      ${o.lanes ? `<span class="sub num">${trimNum(o.perFoot, 2)} ${noun === "pouch" ? "pouches" : "labels"} per foot · ${trimNum(o.perMeter, 1)} per metre</span><span class="sub num">${fmt(o.usedWidth)} of ${fmt(w.usable)} used (${Math.round(o.utilisation*100)}%)</span>` : `<span class="sub">Too wide for the ${fmt(w.usable)} usable web</span>`}
+    </button>`).join("");
+  const o = out[sel];
+  const notes = [
+    `${fmt(w.web)} web, ${fmt(w.usable)} usable. Gap ${fmt(w.gapAcross)} between lanes and ${fmt(w.gapAround)} between ${noun}s along the web.`,
+    item.webKey === "pouch" ? (item.flat ? "Laid out from the flat printed sheet (front, gusset and back)." : "Laid out from width × height; the flat sheet wasn't found.") : "",
+    item.webKey === "roll_label" ? "Check the customer's unwind direction: it decides which way the label runs on the roll." : "",
+    "Planning estimate. Prepress confirms lanes, repeat and the die.",
+  ].filter(Boolean);
+  return `<div class="nest-cards">${cards}</div>${o && o.lanes ? webSVG(o, w, noun) : ""}<ul class="nest-notes">${notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>`;
+}
+
+function webSVG(o, w, noun){
+  const reps = Math.max(3, Math.ceil(Math.max(w.web * 1.3, 24) / o.repeat)), L = reps * o.repeat;
+  const margin = (w.web - w.usable) / 2, y0 = margin + (w.usable - o.usedWidth) / 2;
+  let items = "";
+  for (let j = 0; j < o.lanes; j++) for (let i = 0; i < reps; i++)
+    items += `<rect x="${i * o.repeat + w.gapAround/2}" y="${y0 + j * (o.across + w.gapAcross)}" width="${o.around}" height="${o.across}" fill="#e9effd" stroke="#e5484d" stroke-width="1.2" vector-effect="non-scaling-stroke" rx="${noun === "label" ? Math.min(o.around, o.across) * .06 : 0}"/>`;
+  const pad = Math.max(L, w.web) * 0.05, fs = Math.max(L, w.web) * 0.024;
+  return `<figure class="nest-fig" style="margin:0"><svg viewBox="${-pad*2.2} ${-pad} ${L + pad*3.2} ${w.web + pad*2.2}" role="img" aria-label="${o.lanes} lanes on a ${w.web} inch web">
+      <defs><pattern id="whatch" width="${fs*.6}" height="${fs*.6}" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="${fs*.6}" stroke="#c9c7c0" stroke-width="${fs*.12}"/></pattern></defs>
+      <rect x="0" y="0" width="${L}" height="${w.web}" fill="#fff" stroke="#55595f" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+      <rect x="0" y="0" width="${L}" height="${margin}" fill="url(#whatch)"/><rect x="0" y="${w.web - margin}" width="${L}" height="${margin}" fill="url(#whatch)"/>
+      <rect x="0" y="${margin}" width="${L}" height="${w.usable}" fill="none" stroke="#16a34a" stroke-width="1" stroke-dasharray="6 4" vector-effect="non-scaling-stroke"/>
+      ${items}
+      <text x="${-pad*.9}" y="${w.web/2}" font-size="${fs}" text-anchor="middle" fill="#3d4046" font-family="system-ui,sans-serif" font-weight="600" transform="rotate(-90 ${-pad*.9} ${w.web/2})">${trimNum(w.web, 3)}″ web · ${trimNum(w.usable, 3)}″ usable</text>
+      <text x="${L/2}" y="${w.web + pad*.75}" font-size="${fs}" text-anchor="middle" fill="#3d4046" font-family="system-ui,sans-serif" font-weight="600">Web direction →  repeat ${trimNum(o.repeat, 3)}″</text>
+    </svg>
+    <figcaption class="cap"><span><i style="background:#e9effd;border:1px solid #e5484d"></i>${noun[0].toUpperCase() + noun.slice(1)}</span><span><i style="border:1px dashed #16a34a"></i>Usable width</span><span class="num">${o.lanes} ${o.lanes === 1 ? "lane" : "lanes"} · ${trimNum(o.perFoot, 2)} per foot</span></figcaption></figure>`;
+}
+
+function nestCfgHTML(item, cfg){
+  const u = uLbl();
+  if (item.kind === "sheet") {
+    const rows = cfg.sheets.map((s, i) => `<tr data-i="${i}">
+        <td><input class="name" data-f="name" value="${esc(s.name)}" aria-label="Sheet name"></td>
+        <td><select data-f="press" aria-label="Press"><option${s.press === "Offset" ? " selected" : ""}>Offset</option><option${s.press === "Digital" ? " selected" : ""}>Digital</option></select></td>
+        ${["w","h","gripper","tail","side"].map(f => `<td><input type="number" min="0" step="any" data-f="${f}" value="${uIn(s[f])}" aria-label="${f}"></td>`).join("")}
+        <td><button type="button" class="x" data-del="${i}" aria-label="Remove sheet">×</button></td></tr>`).join("");
+    return `<div class="nest-cfg" id="nestCfg">
+      <div class="row"><label>Gutter between ${item.gutterKey === "commercial" ? "pieces" : "dies"} (${u})<input type="number" min="0" step="any" id="nGutter" value="${uIn(cfg.gutter[item.gutterKey])}"></label>
+        <div class="spacer" style="flex:1"></div><button type="button" class="btn" id="nAdd">Add sheet</button><button type="button" class="btn" id="nReset">Reset to defaults</button></div>
+      <div class="tw"><table><thead><tr><th>Sheet</th><th>Press</th><th>Width (${u})</th><th>Height (${u})</th><th>Gripper (${u})</th><th>Tail (${u})</th><th>Each side (${u})</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <span class="muted" style="font-size:12px">The gripper runs along the sheet width (top edge in the drawing). Changes are saved in this browser.</span></div>`;
+  }
+  const w = cfg.web[item.webKey];
+  return `<div class="nest-cfg" id="nestCfg"><div class="row">
+      ${[["web","Web width"],["usable","Max usable"],["gapAcross","Gap between lanes"],["gapAround","Gap along the web"]].map(([f, n]) => `<label>${n} (${u})<input type="number" min="0" step="any" data-w="${f}" value="${uIn(w[f])}"></label>`).join("")}
+      <div class="spacer" style="flex:1"></div><button type="button" class="btn" id="nReset">Reset to defaults</button></div>
+      <span class="muted" style="font-size:12px">Changes are saved in this browser.</span></div>`;
+}
+
+function saveNestCfg(cfg){ store.set(NEST_KEY, cfg); nestCache.clear(); }
+function wireNest(item, out, cfg){
+  document.querySelectorAll("#nestBody .ncard").forEach(b => b.onclick = () => { nestPick[item.kind === "sheet" ? item.gutterKey : item.webKey] = +b.dataset.n; renderNest(); });
+  if (!nestOpen) return;
+  const rerender = () => { saveNestCfg(cfg); renderNest(); };
+  if ($("#nReset")) $("#nReset").onclick = () => {
+    const d = Nesting.DEFAULTS;
+    if (item.kind === "sheet") { cfg.sheets = clone(d.sheets); cfg.gutter[item.gutterKey] = d.gutter[item.gutterKey]; }
+    else cfg.web[item.webKey] = clone(d.web[item.webKey]);
+    rerender();
+  };
+  if (item.kind === "sheet") {
+    $("#nGutter").onchange = e => { const v = inU(e.target.value); if (!isNaN(v)) { cfg.gutter[item.gutterKey] = v; rerender(); } };
+    $("#nAdd").onclick = () => { cfg.sheets.push({id: "c" + Date.now(), name: "Custom", press: "Offset", w: 40, h: 28, gripper: .5, tail: .375, side: .25}); rerender(); };
+    document.querySelectorAll("#nestCfg [data-del]").forEach(b => b.onclick = () => { if (cfg.sheets.length > 1) { cfg.sheets.splice(+b.dataset.del, 1); nestPick = {}; rerender(); } });
+    document.querySelectorAll("#nestCfg tr[data-i] [data-f]").forEach(inp => inp.onchange = () => {
+      const s = cfg.sheets[+inp.closest("tr").dataset.i], f = inp.dataset.f;
+      if (f === "name" || f === "press") s[f] = inp.value;
+      else { const v = inU(inp.value); if (isNaN(v) || ((f === "w" || f === "h") && v <= 0)) return; s[f] = v; }
+      rerender();
+    });
+  } else {
+    document.querySelectorAll("#nestCfg [data-w]").forEach(inp => inp.onchange = () => {
+      const v = inU(inp.value); if (isNaN(v)) return; cfg.web[item.webKey][inp.dataset.w] = v; rerender();
+    });
   }
 }
 
