@@ -80,6 +80,7 @@ class Segment:
     x1: float
     y1: float
     curve: bool = False
+    ctrl: tuple[float, float, float, float] | None = None  # cubic control points (c1x, c1y, c2x, c2y)
 
     @property
     def length(self) -> float:
@@ -353,20 +354,21 @@ class _Walker:
                     cur = (x, y)
                 elif op in ("c", "v", "y"):
                     vals = [_num(v) for v in operands]
+                    if cur is None:
+                        cur = start = (vals[-2], vals[-1])
+                        subpaths.append([T(*cur)])
                     if op == "c":
                         ctrl = [(vals[0], vals[1]), (vals[2], vals[3])]
                         end = (vals[4], vals[5])
-                    elif op == "v":
-                        ctrl = [(vals[0], vals[1])]
+                    elif op == "v":   # first control point = current point
+                        ctrl = [cur, (vals[0], vals[1])]
                         end = (vals[2], vals[3])
-                    else:
-                        ctrl = [(vals[0], vals[1])]
+                    else:             # 'y': second control point = end point
+                        ctrl = [(vals[0], vals[1]), (vals[2], vals[3])]
                         end = (vals[2], vals[3])
-                    if cur is None:
-                        cur = start = end
-                        subpaths.append([T(*end)])
                     p0, p1 = T(*cur), T(*end)
-                    segs.append(Segment(p0[0], p0[1], p1[0], p1[1], curve=True))
+                    c1, c2 = T(*ctrl[0]), T(*ctrl[1])
+                    segs.append(Segment(p0[0], p0[1], p1[0], p1[1], curve=True, ctrl=(c1[0], c1[1], c2[0], c2[1])))
                     subpaths[-1].extend([T(*c) for c in ctrl] + [p1])
                     cur = end
                 elif op == "re":

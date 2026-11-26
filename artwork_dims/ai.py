@@ -104,7 +104,7 @@ def review_page(page: dict, requested_type: str | None, client: anthropic.Anthro
                 {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": clean_b64}},
                 {"type": "text", "text": "Annotated render:"},
                 {"type": "image", "source": {"type": "base64", "media_type": "image/png",
-                                             "data": page["preview_png_b64"]}},
+                                             "data": page["_overlay_png_b64"]}},
                 {"type": "text", "text": f"Measured from the PDF:\n```json\n{facts}\n```\n\n{ask}"},
             ],
         }],

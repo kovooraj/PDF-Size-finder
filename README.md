@@ -9,6 +9,14 @@ A sales person uploads a customer's artwork PDF and gets the product dimensions:
 | Roll label | Width × Height of one label's die shape (+ shape: rectangle / rounded / circle / oval) |
 | Commercial print | Finished trim Width × Height (bleed reported separately) |
 
+## Using it
+
+Drop a PDF anywhere on the page, pick the product (or leave it on Auto-detect), and press **Find dimensions**.
+The result shows each dimension as a tile, plus a preview with the dimension arrows drawn on the artwork.
+Hover a tile to highlight its arrow. Toggle layers (dimensions, dieline, folds, size box, artwork extents,
+crop marks), switch inches/mm, and click the preview (or **Expand**) for a full-screen viewer: scroll or pinch
+to zoom, drag to move, `+`/`-`/`0` keys, Esc to close.
+
 ## How it works
 
 1. **Measure (exact, no AI).** `artwork_dims/geometry.py` walks the PDF content stream with pikepdf and records

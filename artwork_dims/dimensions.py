@@ -56,9 +56,30 @@ class DimResult:
     notes: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     questions: list[str] = field(default_factory=list)
+    # Where to draw each dimension on the preview: PDF points, y up. See ann().
+    annotations: list[dict] = field(default_factory=list)
+
+    def ann(self, key: str, a, b, side: str, lane: int = 0, primary: bool = True, transposed: bool = False,
+            value_in: float | None = None, label: str | None = None):
+        """a, b: (u, v) points; when `transposed`, u/v are swapped back to x/y.
+        side: which side of the measured edge the dimension line sits on ('top', 'bottom', 'left',
+        'right' in u/v space). lane: stacking order when several dimensions share a side."""
+        if transposed:
+            a, b = (a[1], a[0]), (b[1], b[0])
+            side = {"top": "right", "bottom": "left", "right": "top", "left": "bottom"}[side]
+        self.annotations.append({"key": key, "label": label or ANN_LABEL.get(key, key), "x1": a[0], "y1": a[1],
+                                 "x2": b[0], "y2": b[1], "side": side, "lane": lane, "primary": primary,
+                                 "value_in": value_in})
 
     def as_dict(self):
+        anns = []
+        for an in self.annotations:
+            v = an["value_in"] if an["value_in"] is not None else (
+                self.fields[an["key"]].value_in if an["key"] in self.fields else None)
+            if v is not None:
+                anns.append({**an, "value_in": round(v, 4)})
         return {
+            "annotations": anns,
             "product_type": self.product_type,
             "product_type_source": self.product_type_source,
             "fields": {k: v.as_dict() for k, v in self.fields.items()},
@@ -68,6 +89,16 @@ class DimResult:
             "warnings": self.warnings,
             "questions": self.questions,
         }
+
+
+ANN_LABEL = {"width": "W", "height": "H", "gusset": "G", "length": "L", "depth": "D",
+             "flat_width": "Flat W", "flat_height": "Flat H"}
+
+
+def _ann_rect(res: "DimResult", r: Rect, wkey="width", hkey="height", primary=True, lane=0):
+    """Width under the rectangle, height to its left."""
+    res.ann(wkey, (r[0], r[1]), (r[2], r[1]), "bottom", lane, primary)
+    res.ann(hkey, (r[0], r[1]), (r[0], r[3]), "left", lane, primary)
 
 
 def _w(r: Rect) -> float:
@@ -208,6 +239,7 @@ def folding_carton(f: PageFacts, res: DimResult):
         trim, src, conf = best_trim(f)
         res.fields["flat_width"] = Field(_w(trim), src, "low")
         res.fields["flat_height"] = Field(_h(trim), src, "low")
+        _ann_rect(res, trim, "flat_width", "flat_height")
         res.warnings.append("No dieline found. A folding carton needs its dieline to get L x W x D; "
                             "ask the customer for the dieline or the structural spec.")
         res.questions.append("Can the customer supply the carton dieline (or the L x W x D and style, e.g. reverse tuck end)?")
@@ -216,6 +248,7 @@ def folding_carton(f: PageFacts, res: DimResult):
     conf = "high" if c.dieline_source == "spot" else "medium"
     res.fields["flat_width"] = Field(_w(flat), src, conf)
     res.fields["flat_height"] = Field(_h(flat), src, conf)
+    _ann_rect(res, flat, "flat_width", "flat_height", primary=False)
 
     segs, fold_src = _fold_segments(f)
     found = None
@@ -240,7 +273,8 @@ def folding_carton(f: PageFacts, res: DimResult):
         cand = (a + b) * 2
         if found is None or cand > found["score"]:
             found = {"score": cand, "a": a, "b": b, "depth": depth, "gaps": gaps, "i": i,
-                     "transposed": transposed}
+                     "transposed": transposed, "bounds": bounds, "fl": fl,
+                     "depth_at": (hcl[0][0], hcl[1][0]) if len(hcl) >= 2 else None}
     if not found:
         res.warnings.append("Could not find the 4 alternating body panels (L, W, L, W) in the fold lines. "
                             "This may be a tray, sleeve, mailer or a multi-up layout; flat size is reliable, "
@@ -257,6 +291,14 @@ def folding_carton(f: PageFacts, res: DimResult):
         res.warnings.append("Could not find the top and bottom score lines of the body, so depth is unknown.")
     gaps = found["gaps"]
     i = found["i"]
+    bnd, fl, tp = found["bounds"], found["fl"], found["transposed"]
+    first_key = "length" if found["a"] >= found["b"] else "width"
+    second_key = "width" if first_key == "length" else "length"
+    res.ann(first_key, (bnd[i], fl[3]), (bnd[i + 1], fl[3]), "top", transposed=tp)
+    res.ann(second_key, (bnd[i + 1], fl[3]), (bnd[i + 2], fl[3]), "top", transposed=tp)
+    if found["depth_at"]:
+        y1, y2 = sorted(found["depth_at"])
+        res.ann("depth", (fl[2], y1), (fl[2], y2), "right", transposed=tp)
     res.panels = {
         "orientation": "panels run vertically" if not found["transposed"] else "panels run horizontally",
         "panel_widths_in": [round(g, 4) for g in gaps],
@@ -276,9 +318,13 @@ def pouch(f: PageFacts, res: DimResult):
 
     # Side-gusset pouch: front | gusset | back | gusset
     vcl = [cl for cl in _clusters(segs, "v") if (cl[3] - cl[2]) >= 0.5 * (flat[3] - flat[1])]
-    alt = _alternating_panels(sorted({flat[0], *[cl[0] for cl in vcl], flat[2]})) if vcl else None
+    sg_bounds = sorted({flat[0], *[cl[0] for cl in vcl], flat[2]})
+    alt = _alternating_panels(sg_bounds) if vcl else None
     if alt:
-        _, a, b, gaps = alt
+        k, a, b, gaps = alt
+        res.ann("width" if a >= b else "gusset", (sg_bounds[k], flat[3]), (sg_bounds[k + 1], flat[3]), "top")
+        res.ann("gusset" if a >= b else "width", (sg_bounds[k + 1], flat[3]), (sg_bounds[k + 2], flat[3]), "top")
+        res.ann("height", (flat[2], flat[1]), (flat[2], flat[3]), "right")
         res.fields["width"] = Field(max(a, b), f"front panel ({fold_src})", "medium")
         res.fields["height"] = Field(fh, "dieline height", "medium")
         res.fields["gusset"] = Field(min(a, b), f"side gusset panel ({fold_src})", "medium")
@@ -295,12 +341,22 @@ def pouch(f: PageFacts, res: DimResult):
             gaps = [(bounds[k + 1] - bounds[k]) / PT_PER_IN for k in range(len(bounds) - 1)]
             across = (fl[2] - fl[0]) / PT_PER_IN
             if len(gaps) >= 3 and _close(gaps[0], gaps[-1]) and sum(gaps[1:-1]) < gaps[0]:
-                layout = ("gusset", gaps, across, transposed)
+                layout = ("gusset", gaps, across, transposed, bounds, fl)
                 break
             if len(gaps) == 2 and _close(gaps[0], gaps[1]) and layout is None:
-                layout = ("fold", gaps, across, transposed)
+                layout = ("fold", gaps, across, transposed, bounds, fl)
+        if layout:
+            # panels are separated along v (y, or x when transposed): H then G along the right edge,
+            # W across the top, the whole flat sheet along the left.
+            _, _g, _a, tp, bnd, fl = layout
+            res.ann("height", (fl[2], bnd[0]), (fl[2], bnd[1]), "right", transposed=tp)
+            if layout[0] == "gusset":
+                res.ann("gusset", (fl[2], bnd[1]), (fl[2], bnd[-2]), "right", transposed=tp)
+            res.ann("width", (fl[0], fl[3]), (fl[2], fl[3]), "top", transposed=tp)
+            res.ann("flat", (fl[0], fl[1]), (fl[0], fl[3]), "left", primary=False, transposed=tp,
+                    value_in=(fl[3] - fl[1]) / PT_PER_IN, label="Flat")
         if layout and layout[0] == "gusset":
-            _, gaps, across, transposed = layout
+            _, gaps, across, transposed, _b, _f = layout
             way = "side by side" if transposed else "stacked"
             res.fields["width"] = Field(across, "dieline, across the panels", "medium")
             res.fields["height"] = Field(gaps[0], f"front/back panel ({fold_src})", "medium")
@@ -308,13 +364,14 @@ def pouch(f: PageFacts, res: DimResult):
             res.notes.append(f"Layout looks like front panel / bottom gusset / back panel ({way}). "
                              "Gusset is the full unfolded depth.")
         elif layout and layout[0] == "fold":
-            _, gaps, across, _t = layout
+            _, gaps, across, _t, _b, _f = layout
             res.fields["width"] = Field(across, "dieline, across the panels", "medium")
             res.fields["height"] = Field(gaps[0], "half of folded layout", "medium")
             res.notes.append("Single centre fold and no gusset found: front and back on one sheet, folded at the bottom.")
         else:
             res.fields["width"] = Field(_w(trim), tsrc, tconf)
             res.fields["height"] = Field(_h(trim), tsrc, tconf)
+            _ann_rect(res, trim)
             if not lab.get("gusset"):
                 res.questions.append("Is this a stand-up pouch with a bottom gusset? If yes, what gusset depth?")
 
@@ -347,6 +404,7 @@ def roll_label(f: PageFacts, res: DimResult):
             res.fields["width"] = Field(w, "die-cut line of one label", conf)
             res.fields["height"] = Field(h, "die-cut line of one label", conf)
             shape_paths = [p for p in cut_closed if (round(_w(p.bbox), 3), round(_h(p.bbox), 3)) == (w, h)]
+            _ann_rect(res, shape_paths[0].bbox)
             res.notes.append(f"Label shape: {_shape(shape_paths[0], w, h)}.")
             if n > 1:
                 res.notes.append(f"{n} identical labels on the sheet (multi-up layout); size is for one label.")
@@ -354,6 +412,7 @@ def roll_label(f: PageFacts, res: DimResult):
     trim, src, conf = best_trim(f)
     res.fields["width"] = Field(_w(trim), src, conf)
     res.fields["height"] = Field(_h(trim), src, conf)
+    _ann_rect(res, trim)
     if f.classified.dieline_source == "none":
         res.questions.append("No die line in the file. Is the label a rectangle with square corners, or does it need a custom die shape?")
 
@@ -374,6 +433,7 @@ def commercial(f: PageFacts, res: DimResult):
     trim, src, conf = best_trim(f)
     res.fields["width"] = Field(_w(trim), src, conf)
     res.fields["height"] = Field(_h(trim), src, conf)
+    _ann_rect(res, trim)
     if f.bleed_box and not _same_rect(f.bleed_box, trim):
         b = (trim[0] - f.bleed_box[0]) / PT_PER_IN
         res.notes.append(f"BleedBox gives about {b:.3f}\" bleed.")

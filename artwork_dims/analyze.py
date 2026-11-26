@@ -15,7 +15,9 @@ from .geometry import Rect, extract_page_geometry
 from .textdims import find_callouts
 
 MAX_PAGES = 4
-PREVIEW_LONG_SIDE = 1500
+PREVIEW_LONG_SIDE = 1500   # PNG for the AI review
+VIEW_LONG_SIDE = 3200      # JPEG for the zoomable viewer
+MAX_OVERLAY_SEGMENTS = 6000
 
 # Text that belongs to the dieline / tech notes, not to the printed artwork.
 NON_ART_TEXT = re.compile(
@@ -62,7 +64,8 @@ def _text_boxes(page: pymupdf.Page) -> tuple[str, list[Rect], list[dict]]:
     return full, art_boxes, spans_out
 
 
-def _render(doc_bytes: bytes, index: int, overlays: dict | None, long_side: int) -> tuple[bytes, float]:
+def _render(doc_bytes: bytes, index: int, overlays: dict | None, long_side: int,
+            fmt: str = "png") -> tuple[bytes, float]:
     doc = pymupdf.open(stream=doc_bytes, filetype="pdf")
     page = doc[index]
     page.set_rotation(0)
@@ -107,9 +110,17 @@ def _render(doc_bytes: bytes, index: int, overlays: dict | None, long_side: int)
     w, h = page.rect.width, page.rect.height
     zoom = long_side / max(w, h)
     pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)
-    png = pix.tobytes("png")
+    png = pix.tobytes("jpeg", jpg_quality=82) if fmt == "jpeg" else pix.tobytes("png")
     doc.close()
     return png, zoom
+
+
+def annotations_to_view(result_dict: dict, media: Rect) -> dict:
+    """Convert annotation coordinates from PDF points (y up) to page points from the top-left."""
+    for an in result_dict.get("annotations", []):
+        an["x1"], an["y1"] = round(an["x1"] - media[0], 2), round(media[3] - an["y1"], 2)
+        an["x2"], an["y2"] = round(an["x2"] - media[0], 2), round(media[3] - an["y2"], 2)
+    return result_dict
 
 
 def _pixel_content_bbox(png: bytes, zoom: float, media: Rect) -> Rect | None:
@@ -174,6 +185,42 @@ def analyze_pdf(data: bytes, product_type: str | None = None, max_pages: int = M
             "art": art,
         }
         overlay_png, _ = _render(data, i, overlays, PREVIEW_LONG_SIDE)
+        view_jpg, _ = _render(data, i, None, VIEW_LONG_SIDE, "jpeg")
+        mw_pt, mh_pt = media[2] - media[0], media[3] - media[1]
+
+        def TL(x, y):  # PDF points (y up) -> page points from the top-left (y down)
+            return round(x - media[0], 2), round(media[3] - y, 2)
+
+        def seg_out(s):
+            a, b = TL(s.x0, s.y0), TL(s.x1, s.y1)
+            if s.curve and s.ctrl:
+                c1, c2 = TL(s.ctrl[0], s.ctrl[1]), TL(s.ctrl[2], s.ctrl[3])
+                return [*a, *b, *c1, *c2]
+            return [*a, *b]
+
+        def rect_out(r):
+            if r is None:
+                return None
+            a, b = TL(r[0], r[3]), TL(r[2], r[1])
+            return [a[0], a[1], round(b[0] - a[0], 2), round(b[1] - a[1], 2)]
+
+        result_dict = annotations_to_view(res.as_dict(), media)
+        cut_segs = overlays["cut"][:MAX_OVERLAY_SEGMENTS]
+        crease_segs = overlays["crease"][:MAX_OVERLAY_SEGMENTS]
+        view = {
+            "image_b64": base64.b64encode(view_jpg).decode(),
+            "image_type": "image/jpeg",
+            "width_pt": round(mw_pt, 2),
+            "height_pt": round(mh_pt, 2),
+            "overlay": {
+                "cut": [seg_out(s) for s in cut_segs],
+                "crease": [seg_out(s) for s in crease_segs],
+                "marks": [seg_out(s) for s in cls.trim_marks],
+                "trim": rect_out(trim_rect),
+                "art": rect_out(art),
+                "truncated": len(overlays["cut"]) > MAX_OVERLAY_SEGMENTS or len(overlays["crease"]) > MAX_OVERLAY_SEGMENTS,
+            },
+        }
 
         def ins(r):
             return None if r is None else {"width": round((r[2] - r[0]) / PT_PER_IN, 4),
@@ -213,8 +260,9 @@ def analyze_pdf(data: bytes, product_type: str | None = None, max_pages: int = M
             "callouts": [c.as_dict() for c in callouts],
             "text_sample": text[:1500],
             "notes_from_classifier": cls.notes,
-            "result": res.as_dict(),
-            "preview_png_b64": base64.b64encode(overlay_png).decode(),
+            "result": result_dict,
+            "view": view,
+            "_overlay_png_b64": base64.b64encode(overlay_png).decode(),
             "_clean_png": clean_png,
             "_facts": facts,
         })
@@ -227,6 +275,7 @@ def strip_private(result: dict) -> dict:
     """Remove raw bytes / internal objects before returning JSON."""
     for p in result.get("pages", []):
         p.pop("_clean_png", None)
+        p.pop("_overlay_png_b64", None)
         p.pop("_facts", None)
     return result
 
@@ -251,7 +300,7 @@ def analyze(data: bytes, product_type: str | None = None, use_ai: bool = True, a
                 redo = compute(page["_facts"], ai_type)
                 redo.product_type_source = "identified by AI from the artwork"
                 page["result_rules_guess"] = page["result"]
-                page["result"] = redo.as_dict()
+                page["result"] = annotations_to_view(redo.as_dict(), page["_facts"].media)
             elif not product_type and ai_type == page["result"]["product_type"]:
                 page["result"]["product_type_source"] += "; confirmed by AI"
     return strip_private(result)
