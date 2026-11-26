@@ -508,7 +508,7 @@ $("#go").addEventListener("click", run);
 window.run = run;
 
 // ---------- drawing: artwork image + vector overlay + dimension arrows
-const PAD = 64;            // room around the page for dimension lines (px)
+const PAD = 64;            // default room around the page for dimension lines (px); adapted per drawing
 const SVGNS = "http://www.w3.org/2000/svg";
 function el(tag, attrs, parent){ const n = document.createElementNS(SVGNS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); if (parent) parent.appendChild(n); return n; }
 function segPath(list){
@@ -533,15 +533,17 @@ function makeCanvas(host, page, opts = {}){
   const dims = el("g", {class: "D"}, svg);
   cv.append(img, svg); host.appendChild(cv);
   let k = 1;
+  const pad = {l: PAD, r: PAD, t: PAD, b: PAD};
 
   function applyLayers(){
     for (const L of LAYERS) svg.classList.toggle("off-" + L.k, !layers[L.k]);
+    opts.onLayout && opts.onLayout();
   }
   function drawDims(){
     dims.textContent = "";
     const anns = res.annotations || [];
     for (const a of anns) {
-      const x1 = PAD + a.x1*k, y1 = PAD + a.y1*k, x2 = PAD + a.x2*k, y2 = PAD + a.y2*k;
+      const x1 = pad.l + a.x1*k, y1 = pad.t + a.y1*k, x2 = pad.l + a.x2*k, y2 = pad.t + a.y2*k;
       const n = {top:[0,-1], bottom:[0,1], left:[-1,0], right:[1,0]}[a.side] || [0,-1];
       const off = 26 + (a.lane || 0)*30 + (a.primary ? 0 : 4);
       const ax = x1 + n[0]*off, ay = y1 + n[1]*off, bx = x2 + n[0]*off, by = y2 + n[1]*off;
@@ -568,22 +570,42 @@ function makeCanvas(host, page, opts = {}){
       t.setAttribute("x", cx); t.setAttribute("y", cy + .5);
     }
   }
-  function setScale(newK){
-    k = newK;
+  function place(){
     const w = v.width_pt*k, h = v.height_pt*k;
-    cv.style.width = (w + 2*PAD) + "px"; cv.style.height = (h + 2*PAD) + "px";
-    img.style.left = PAD + "px"; img.style.top = PAD + "px"; img.style.width = w + "px"; img.style.height = h + "px";
-    svg.setAttribute("width", w + 2*PAD); svg.setAttribute("height", h + 2*PAD);
-    lines.setAttribute("transform", `translate(${PAD} ${PAD}) scale(${k})`);
+    cv.style.width = (w + pad.l + pad.r) + "px"; cv.style.height = (h + pad.t + pad.b) + "px";
+    img.style.left = pad.l + "px"; img.style.top = pad.t + "px"; img.style.width = w + "px"; img.style.height = h + "px";
+    svg.setAttribute("width", w + pad.l + pad.r); svg.setAttribute("height", h + pad.t + pad.b);
+    lines.setAttribute("transform", `translate(${pad.l} ${pad.t}) scale(${k})`);
     drawDims();
   }
-  function fitTo(w, h){ return Math.max(0.02, Math.min((w - 2*PAD)/v.width_pt, (h - 2*PAD)/v.height_pt)); }
+  // Make the margins exactly as big as the dimension lines and labels need (they keep a constant
+  // on-screen size, so the margins barely depend on the zoom level).
+  function autoPad(){
+    const w = v.width_pt*k, h = v.height_pt*k, M = 14;
+    let need = {l: M, r: M, t: M, b: M};
+    if (layers.dims && dims.childNodes.length) {
+      const bb = dims.getBBox();
+      need = {l: Math.max(M, pad.l - bb.x + M), r: Math.max(M, bb.x + bb.width - (pad.l + w) + M),
+              t: Math.max(M, pad.t - bb.y + M), b: Math.max(M, bb.y + bb.height - (pad.t + h) + M)};
+    }
+    const changed = ["l","r","t","b"].some(s => Math.abs(need[s] - pad[s]) > 1.5);
+    Object.assign(pad, need);
+    return changed;
+  }
+  function setScale(newK){ k = newK; place(); }
+  function fitTo(w, h){ return Math.max(0.02, Math.min((w - pad.l - pad.r)/v.width_pt, (h - pad.t - pad.b)/v.height_pt)); }
+  // fit inside w x h, adapting margins to the drawn dimensions (two passes is enough)
+  function fit(w, h){
+    setScale(fitTo(w, h));
+    for (let i = 0; i < 3 && autoPad(); i++) setScale(fitTo(w, h));
+    return k;
+  }
   function highlight(key){
     dims.classList.toggle("focus", !!key);
     dims.querySelectorAll("g.dim").forEach(g => g.classList.toggle("hot", g.dataset.key === key));
   }
-  applyLayers();
-  return {cv, svg, setScale, fitTo, get k(){ return k; }, applyLayers, highlight, redraw: () => setScale(k)};
+  for (const L of LAYERS) svg.classList.toggle("off-" + L.k, !layers[L.k]);
+  return {cv, svg, setScale, fitTo, fit, autoPad, pad, get k(){ return k; }, applyLayers, highlight, redraw: () => setScale(k)};
 }
 
 // ---------- result view
@@ -677,13 +699,15 @@ function renderResult(){
 
   // preview
   const stage = $("#stage");
-  inline = makeCanvas(stage, page);
   const layout = () => {
+    if (!inline) return;
     const w = stage.clientWidth, h = stage.clientHeight;
-    inline.setScale(inline.fitTo(w, h));
+    inline.fit(w, h);
     inline.cv.style.left = Math.max(0, (w - parseFloat(inline.cv.style.width))/2) + "px";
     inline.cv.style.top = Math.max(0, (h - parseFloat(inline.cv.style.height))/2) + "px";
   };
+  inline = null;
+  inline = makeCanvas(stage, page, {onLayout: () => layout()});
   layout();
   inlineRO && inlineRO.disconnect(); inlineRO = new ResizeObserver(layout); inlineRO.observe(stage);
   stage.addEventListener("click", () => openViewer());
@@ -750,7 +774,7 @@ function openViewer(){
   $("#vTiles").innerHTML = mainKeys(res).map(k => `<span class="vtile" data-key="${k}"><em>${LETTER[k]}</em><span class="num">${fmt(res.fields[k].value_in)}</span></span>`).join("");
   $("#vChips").innerHTML = chipsHTML();
   vStage.querySelectorAll(".cv").forEach(n => n.remove());
-  viewerCanvas = makeCanvas(vStage, page);
+  viewerCanvas = makeCanvas(vStage, page, {onLayout: () => viewerCanvas && (viewerCanvas.autoPad(), viewerCanvas.redraw(), centerViewer())});
   fitViewer();
   document.querySelectorAll("#vTiles .vtile").forEach(t => {
     t.addEventListener("mouseenter", () => viewerCanvas.highlight(t.dataset.key));
@@ -766,8 +790,8 @@ function closeViewer(){
 }
 let fitK = 1;
 function fitViewer(){
-  fitK = viewerCanvas.fitTo(vStage.clientWidth, vStage.clientHeight);
-  viewerCanvas.setScale(fitK); centerViewer(); showZoom();
+  fitK = viewerCanvas.fit(vStage.clientWidth, vStage.clientHeight);
+  centerViewer(); showZoom();
 }
 function centerViewer(){
   const cw = parseFloat(viewerCanvas.cv.style.width), ch = parseFloat(viewerCanvas.cv.style.height);
@@ -789,8 +813,9 @@ function zoomAt(newK, clientX, clientY){
   const ch = parseFloat(viewerCanvas.cv.style.height);
   const newMt = Math.max(0, (vStage.clientHeight - ch)/2);
   viewerCanvas.cv.style.marginTop = newMt + "px";
-  vStage.scrollLeft = (ox - PAD)*ratio + PAD - (cx - r.left);
-  vStage.scrollTop = (oy - PAD)*ratio + PAD + newMt - (cy - r.top);
+  const pl = viewerCanvas.pad.l, pt = viewerCanvas.pad.t;
+  vStage.scrollLeft = (ox - pl)*ratio + pl - (cx - r.left);
+  vStage.scrollTop = (oy - pt)*ratio + pt + newMt - (cy - r.top);
   showZoom();
 }
 $("#vIn").onclick = () => zoomAt(viewerCanvas.k * 1.4);
