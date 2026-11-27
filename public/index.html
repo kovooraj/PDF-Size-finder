@@ -1056,7 +1056,7 @@ function renderTab(){
 }
 
 // ---------- imposition / nesting (maths in nesting.js)
-const NEST_KEY = "dimNestCfg.v1";
+const NEST_KEY = "dimNestCfg.v2"; // v2: carton gutter default 1/16"
 const clone = o => JSON.parse(JSON.stringify(o));
 function nestCfg(){
   const d = Nesting.DEFAULTS, c = store.get(NEST_KEY, null) || {};

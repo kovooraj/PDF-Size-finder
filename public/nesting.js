@@ -26,7 +26,7 @@
       { id: "o2436", name: "24 × 36", press: "Offset", w: 36, h: 24, gripper: 0.5, tail: 0.375, side: 0.25 },
       { id: "d2081", name: "20.8125 × 29.5", press: "Digital", w: 29.5, h: 20.8125, gripper: 0.375, tail: 0.25, side: 0.25 },
     ],
-    gutter: { folding_carton: 0.25, commercial: 0.25 },
+    gutter: { folding_carton: 0.0625, commercial: 0.25 }, // cartons: 1/16" between dies
     web: {
       pouch: { web: 30, usable: 29, gapAcross: 0.25, gapAround: 0.125 },
       // unwind: "best" compares both ways; 1/2 = top/bottom off first (label width across the

@@ -55,7 +55,7 @@ to zoom, drag to move, `+`/`-`/`0` keys, Esc to close.
      The layout with the most ups wins. Cartons always run with the gripper on the long edge; commercial print is also tried fed the other way round.
    - *Commercial print*: exact rectangle fill, mixing turned pieces into the leftover strip.
    - *Sheets* (editable, saved per browser): 28 × 40 and 24 × 36 offset (gripper 0.5″, tail 0.375″, sides
-     0.25″), 20.8125 × 29.5 digital (gripper 0.375″, tail and sides 0.25″). Gutter 0.25″.
+     0.25″), 20.8125 × 29.5 digital (gripper 0.375″, tail and sides 0.25″). Gutter 1/16″ between carton dies, 0.25″ between print pieces.
    - *Pouches*: 30″ web, 29″ usable; height + gusset (the flat length) runs across the web, width along it,
      so they can be sealed and glued. Lanes 0.25″ apart, 0.125″ along the web.
    - *Roll labels*: 13″ web, 12″ usable, 0.125″ gaps. Unwind arrows (↑ #1, ↓ #2, → #3, ← #4) fix which way
