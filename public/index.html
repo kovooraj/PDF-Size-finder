@@ -244,6 +244,18 @@ main{min-width:0;display:grid;gap:16px}
   .stage{height:56vh}
 }
 /* alerts */
+.alertbox{padding:0;overflow:hidden}
+.alertbox summary{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 16px;cursor:pointer;list-style:none;user-select:none}
+.alertbox summary::-webkit-details-marker{display:none}
+.alertbox summary .at{font-weight:650;font-size:14px}
+.alertbox summary .spacer{flex:1}
+.alertbox summary .chev{width:18px;height:18px;color:var(--muted);transition:transform .15s}
+.alertbox[open] summary .chev{transform:rotate(180deg)}
+.alertbox .alerts{padding:0 12px 12px}
+.achip{font-size:12px;font-weight:600;padding:2px 9px;border-radius:99px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted)}
+.achip.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.achip.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.achip.ask{background:var(--info-soft);color:var(--accent);border-color:transparent}
 .alerts{display:grid;gap:8px}
 .alert{display:flex;gap:11px;padding:11px 14px;border-radius:12px;font-size:13.5px;background:var(--panel);border:1px solid var(--line)}
 .alert svg{flex:none;width:18px;height:18px;margin-top:1px}
@@ -476,6 +488,7 @@ const LAYERS = [
 ];
 
 let file = null, ptype = "auto", data = null, pageIdx = 0, detailTab = "measure";
+let alertsOpen = store.get("dimAlertsOpen", false);
 let unit = store.get("dimUnit", "in");
 let layers = {info:true, ...store.get("dimLayers", {dims:true, cut:true, crease:true, trim:false, art:false, marks:false})};
 let cfg = {direct_limit_bytes: 4*1024*1024, max_bytes: 1024*1024*1024, ai: false};
@@ -948,7 +961,18 @@ function renderResult(){
       </div>
     </section>
 
-    ${alerts.length ? `<section class="alerts">${alerts.map(([t, h]) => `<div class="alert ${t}">${ALERT_ICON[t]}<div>${h}</div></div>`).join("")}</section>` : ""}
+    <section class="card nest" id="nest" aria-label="Imposition and nesting"></section>
+
+
+    ${alerts.length ? (() => {
+      const n = k => alerts.filter(([t]) => t === k).length;
+      const chips = [["bad", n("bad"), "issue"], ["warn", n("warn"), "warning"], ["ask", n("ask"), "to ask the customer"], ["note", n("note"), "note"]]
+        .filter(([, c]) => c).map(([k, c, w]) => `<span class="achip ${k}">${c} ${w}${c === 1 || k === "ask" ? "" : "s"}</span>`).join("");
+      return `<details class="card alertbox" id="alertbox"${alertsOpen ? " open" : ""}>
+        <summary><span class="at">Notes &amp; questions</span>${chips}<span class="spacer"></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></summary>
+        <div class="alerts">${alerts.map(([t, h]) => `<div class="alert ${t}">${ALERT_ICON[t]}<div>${h}</div></div>`).join("")}</div>
+      </details>`;
+    })() : ""}
 
     <section class="card details">
       <div class="tabbar" role="tablist">
@@ -957,7 +981,7 @@ function renderResult(){
       <div class="tabpanel" id="tabpanel"></div>
     </section>
 
-    <section class="card nest" id="nest" aria-label="Imposition and nesting"></section>`;
+`;
 
   // preview
   const stage = $("#stage");
@@ -989,6 +1013,7 @@ function renderResult(){
   };
   $("#copy").onclick = async () => { try { await navigator.clipboard.writeText($("#salesline").textContent); $("#copy").lastChild.textContent = "Copied"; setTimeout(() => $("#copy") && ($("#copy").lastChild.textContent = "Copy"), 1500); } catch {} };
   document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { detailTab = b.dataset.tab; document.querySelectorAll("[data-tab]").forEach(x => x.setAttribute("aria-selected", x === b)); renderTab(); });
+  if ($("#alertbox")) $("#alertbox").addEventListener("toggle", e => { alertsOpen = e.target.open; store.set("dimAlertsOpen", alertsOpen); });
   renderTab();
   renderNest();
 }
@@ -1096,7 +1121,10 @@ function renderNest(){
   };
   if (nestCache.has(key)) return draw(nestCache.get(key));
   setTimeout(() => {
-    const out = item.kind === "sheet" ? Nesting.nestSheets(item.die, cfg.sheets, cfg.gutter[item.gutterKey]) : Nesting.nestWeb(item.w, item.h, cfg.web[item.webKey], {fixed: !!item.fixed});
+    // Folding cartons always run with the gripper on the long edge of the sheet.
+    const carton = item.gutterKey === "folding_carton";
+    const sheets = carton ? cfg.sheets.map(s => s.w >= s.h ? s : {...s, w: s.h, h: s.w}) : cfg.sheets;
+    const out = item.kind === "sheet" ? Nesting.nestSheets(item.die, sheets, cfg.gutter[item.gutterKey], {tryOtherFeed: !carton}) : Nesting.nestWeb(item.w, item.h, cfg.web[item.webKey], {fixed: !!item.fixed});
     nestCache.set(key, out);
     draw(out);
   }, 30);
@@ -1116,7 +1144,7 @@ function sheetHTML(item, out, cfg){
     </button>`).join("");
   const r = out[sel], g = cfg.gutter[item.gutterKey];
   const notes = [
-    `Gutter ${fmt(g)} between ${item.gutterKey === "commercial" ? "pieces" : "dies"}; gripper, tail and side margins come off each sheet first (change them in ${"Sheets & spacing"}).`,
+    `Gutter ${fmt(g)} between ${item.gutterKey === "commercial" ? "pieces" : "dies"}; gripper, tail and side margins come off each sheet first${item.gutterKey === "folding_carton" ? ", with the gripper on the long edge" : ""} (change them in Sheets & spacing).`,
     item.die.source === "dieline" && !r.openOutline ? "Nested from the actual dieline outline, so flaps can tuck into each other." :
       item.gutterKey === "folding_carton" ? "Laid out as rectangles (flat size): the dieline outline couldn't be traced, so real nesting may fit more." : "",
     item.gutterKey === "folding_carton" ? "Check board grain direction before quoting: the best layout may turn the carton 90°." : "",
@@ -1254,7 +1282,7 @@ function nestCfgHTML(item, cfg){
       <div class="row"><label>Gutter between ${item.gutterKey === "commercial" ? "pieces" : "dies"} (${u})<input type="number" min="0" step="any" id="nGutter" value="${uIn(cfg.gutter[item.gutterKey])}"></label>
         <div class="spacer" style="flex:1"></div><button type="button" class="btn" id="nAdd">Add sheet</button><button type="button" class="btn" id="nReset">Reset to defaults</button></div>
       <div class="tw"><table><thead><tr><th>Sheet</th><th>Press</th><th>Width (${u})</th><th>Height (${u})</th><th>Gripper (${u})</th><th>Tail (${u})</th><th>Each side (${u})</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-      <span class="muted" style="font-size:12px">The gripper runs along the sheet width (top edge in the drawing). Changes are saved in this browser.</span></div>`;
+      <span class="muted" style="font-size:12px">${item.gutterKey === "folding_carton" ? "Folding cartons always run with the gripper on the long edge of the sheet (top edge in the drawing)." : "The gripper runs along the sheet width (top edge in the drawing); each sheet is also tried fed the other way."} Changes are saved in this browser.</span></div>`;
   }
   const w = cfg.web[item.webKey];
   return `<div class="nest-cfg" id="nestCfg"><div class="row">

@@ -52,7 +52,7 @@ to zoom, drag to move, `+`/`-`/`0` keys, Esc to close.
      are dropped row by row as close as the outline allows: straight, staggered, or head-to-tail (every other row
      turned 180°), die as drawn or turned 90°. A free-form pass also places dies one by one, in any of four
      turns, at the first free spot from the gripper edge, so flaps tuck into each other's gaps ("lego-ing").
-     The layout with the most ups wins; each sheet is also tried fed the other way round.
+     The layout with the most ups wins. Cartons always run with the gripper on the long edge; commercial print is also tried fed the other way round.
    - *Commercial print*: exact rectangle fill, mixing turned pieces into the leftover strip.
    - *Sheets* (editable, saved per browser): 28 × 40 and 24 × 36 offset (gripper 0.5″, tail 0.375″, sides
      0.25″), 20.8125 × 29.5 digital (gripper 0.375″, tail and sides 0.25″). Gutter 0.25″.
