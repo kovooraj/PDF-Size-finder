@@ -196,6 +196,11 @@ main{min-width:0;display:grid;gap:16px}
 .chip[aria-pressed=false] i{opacity:.35}
 .chip.c-dims i{border-color:var(--dim)}.chip.c-cut i{border-color:var(--cut)}.chip.c-crease i{border-top-style:dashed;border-color:var(--crease)}
 .chip.c-trim i{border-top-style:dashed;border-color:var(--trim)}.chip.c-art i{border-top-style:dotted;border-color:var(--art)}.chip.c-marks i{border-color:var(--marks)}.chip.c-info i{height:8px;border:1px dashed #64748b;background:rgba(100,116,139,.2)}
+.chip.c-image{font-weight:650;color:var(--ink)}
+.chip.c-image .eye{width:15px;height:15px}
+.chip.c-image[aria-pressed=false]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.chipsep{width:1px;align-self:stretch;background:var(--line);margin:2px 2px}
+.cv img.hidden-art{object-position:-100000px 0} /* page box and outline stay, artwork is not painted */
 .tabsmini{display:flex;gap:4px}
 .tabsmini button{border:1px solid transparent;background:none;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer;color:var(--muted);font-weight:550}
 .tabsmini button[aria-selected=true]{border-color:var(--line-2);color:var(--ink);background:var(--panel-2)}
@@ -483,6 +488,7 @@ const LABEL = {width:"Width", height:"Height", gusset:"Gusset", length:"Length",
 const LETTER = {width:"W", height:"H", gusset:"G", length:"L", depth:"D", flat_width:"FW", flat_height:"FH"};
 const ORDER = {pouch:["width","height","gusset"], folding_carton:["length","width","depth"], roll_label:["width","height"], commercial:["width","height"]};
 const LAYERS = [
+  {k:"image", name:"Artwork"},
   {k:"dims", name:"Dimensions"}, {k:"cut", name:"Dieline"}, {k:"crease", name:"Folds"},
   {k:"trim", name:"Size box"}, {k:"art", name:"Artwork extents"}, {k:"marks", name:"Crop marks"},
   {k:"info", name:"Info areas"},
@@ -491,7 +497,7 @@ const LAYERS = [
 let file = null, ptype = "auto", data = null, pageIdx = 0, detailTab = "measure";
 let alertsOpen = store.get("dimAlertsOpen", false);
 let unit = store.get("dimUnit", "in");
-let layers = {info:true, ...store.get("dimLayers", {dims:true, cut:true, crease:true, trim:false, art:false, marks:false})};
+let layers = {info:true, image:true, ...store.get("dimLayers", {dims:true, cut:true, crease:true, trim:false, art:false, marks:false})};
 let cfg = {direct_limit_bytes: 4*1024*1024, max_bytes: 1024*1024*1024, ai: false};
 
 // ---------- access key (?key=...) remembered per browser
@@ -692,11 +698,13 @@ function makeCanvas(host, page, opts = {}){
   if (ov.cut.length) el("path", {class:"cut", d: segPath(ov.cut)}, lines);
   const dims = el("g", {class: "D"}, svg);
   cv.append(img, svg); host.appendChild(cv);
+  img.classList.toggle("hidden-art", !layers.image);
   let k = 1;
   const pad = {l: PAD, r: PAD, t: PAD, b: PAD};
 
   function applyLayers(){
     for (const L of LAYERS) svg.classList.toggle("off-" + L.k, !layers[L.k]);
+    img.classList.toggle("hidden-art", !layers.image);  // keep the page box, hide the artwork
     opts.onLayout && opts.onLayout();
   }
   function drawDims(){
@@ -883,13 +891,18 @@ $("#gApply").onclick = () => {
   renderResult();
 };
 
+const EYE = '<svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
 function chipsHTML(){
-  return LAYERS.map(L => `<button type="button" class="chip c-${L.k}" data-layer="${L.k}" aria-pressed="${!!layers[L.k]}"><i></i>${L.name}</button>`).join("");
+  return LAYERS.map(L => L.k === "image"
+    ? `<button type="button" class="chip c-image" data-layer="image" aria-pressed="${!!layers.image}" title="${layers.image ? "Hide the artwork to see only the lines" : "Show the artwork"}">${layers.image ? EYE : EYE_OFF}${layers.image ? "Hide artwork" : "Show artwork"}</button><span class="chipsep"></span>`
+    : `<button type="button" class="chip c-${L.k}" data-layer="${L.k}" aria-pressed="${!!layers[L.k]}"><i></i>${L.name}</button>`).join("");
 }
 function onChip(e){
   const c = e.target.closest(".chip"); if (!c) return;
   layers[c.dataset.layer] = !layers[c.dataset.layer]; store.set("dimLayers", layers);
   document.querySelectorAll(`.chip[data-layer="${c.dataset.layer}"]`).forEach(x => x.setAttribute("aria-pressed", layers[c.dataset.layer]));
+  if (c.dataset.layer === "image") document.querySelectorAll("#chips, #vChips").forEach(h => h.innerHTML = chipsHTML());
   inline && inline.applyLayers(); viewerCanvas && viewerCanvas.applyLayers();
 }
 const AI_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.6L18 9.4l-4.2 1.8L12 16l-1.8-4.8L6 9.4l4.2-1.8z"/><path d="M19 15l.8 2 2 .8-2 .8L19 21l-.8-2.4-2-.8 2-.8z"/></svg>';
