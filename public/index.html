@@ -310,7 +310,7 @@ pre.raw{white-space:pre-wrap;word-break:break-word;background:var(--panel-2);bor
 .unwind .uwb small{font-size:10.5px;color:var(--muted);font-weight:600}
 .unwind .uwb[aria-pressed=true]{color:var(--accent)}
 .ncard .util{font-size:16px;font-weight:700;color:var(--ok);margin:4px 0 2px}
-.ncard .pe{color:var(--ink-2)}.ncard .pe b{font-weight:650}
+.ncard .pe{color:var(--ink-2)}.ncard .lose{color:var(--warn);font-weight:600}.ncard .pe b{font-weight:650}
 .ncard .gain{font-size:12px;font-weight:650;color:var(--ok)}
 .ncard.best .nm::after{content:"Most ups";margin-left:auto;font-size:10.5px;font-weight:700;color:var(--ok);background:var(--ok-soft);border-radius:99px;padding:1px 7px}
 .nest-fig{border:1px solid var(--line);border-radius:12px;background:#fff;padding:14px;color-scheme:light}
@@ -1085,6 +1085,7 @@ function nestCfg(){
           web: {pouch: {...d.web.pouch, ...((c.web || {}).pouch || {})}, roll_label: {...d.web.roll_label, ...((c.web || {}).roll_label || {})}}};
 }
 let nestOpen = false, nestPick = {}, nestCache = new Map();
+let nestMode = store.get("dimNestMode", "nested"); // "nested" | "straight"
 const uIn = v => unit === "mm" ? trimNum(v*25.4, 1) : trimNum(v, 4);     // inches -> input text
 const inU = t => { const v = parseFloat(t); return isFinite(v) && v >= 0 ? (unit === "mm" ? v/25.4 : v) : NaN; };
 const uLbl = () => unit === "mm" ? "mm" : "in";
@@ -1129,10 +1130,12 @@ function renderNest(){
   const what = {folding_carton: "cartons per sheet", commercial: "pieces per sheet", pouch: "pouches across the web", roll_label: "labels across the web"}[res.product_type];
   host.innerHTML = `<div class="nest-head"><h2>Imposition</h2><span class="beta" title="Layouts are a planning estimate. Prepress confirms the final imposition.">Beta</span>
       <span class="muted">${what || ""}</span><div class="spacer"></div>
+      ${item && item.kind === "sheet" ? `<div class="seg" role="group" aria-label="Layout"><button data-nm="nested" aria-pressed="${nestMode === "nested"}" title="Dies turned and fitted into each other's gaps">Nested</button><button data-nm="straight" aria-pressed="${nestMode === "straight"}" title="Plain rows, every die the same way">Straight rows</button></div>` : ""}
       ${item ? `<button class="btn" id="nestCfgBtn" aria-expanded="${nestOpen}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>${item.kind === "sheet" ? "Sheets & spacing" : "Web & spacing"}</button>` : ""}</div>
     <div class="nest-body" id="nestBody">${item ? `<div class="nest-wait">Working out the layouts…</div>` : `<div class="nest-wait">We need the product size before we can lay it out.</div>`}</div>`;
   if (!item) return;
   $("#nestCfgBtn").onclick = () => { nestOpen = !nestOpen; renderNest(); };
+  document.querySelectorAll("#nest [data-nm]").forEach(b => b.onclick = () => { nestMode = b.dataset.nm; store.set("dimNestMode", nestMode); renderNest(); });
   const key = JSON.stringify([pageIdx, res.product_type, item.kind === "sheet" ? [item.die.w, item.die.h, item.die.source, cfg.sheets, cfg.gutter[item.gutterKey]] : [item.w, item.h, cfg.web[item.webKey]]]);
   const draw = out => {
     if (!$("#nestBody")) return;
@@ -1150,7 +1153,16 @@ function renderNest(){
   }, 30);
 }
 
+// Straight rows: every die the same way in a plain grid (what the Pricing Engine assumes).
+function straightOf(item, r, gutter){
+  const pl = Nesting.nestRect(item.die.w, item.die.h, gutter, r.usable, false);
+  const dieArea = r.ups ? r.utilisation * r.sheet.w * r.sheet.h / r.ups : item.die.w * item.die.h;
+  return {...r, ups: pl.ups, placements: pl.placements, layout: "straight rows", turned90: pl.turned90,
+    box: {w: item.die.w, h: item.die.h}, bitmapOffset: {x: 0, y: 0}, mask: null,
+    utilisation: pl.ups * dieArea / (r.sheet.w * r.sheet.h), nestedUps: r.ups, tighterGutter: null};
+}
 function sheetHTML(item, out, cfg){
+  if (nestMode === "straight") out = out.map(r => straightOf(item, r, cfg.gutter[item.gutterKey]));
   const max = Math.max(...out.map(r => r.ups));
   const pickKey = item.gutterKey, sel = Math.min(nestPick[pickKey] ?? out.findIndex(r => r.ups === max), out.length - 1);
   const cards = out.map((r, i) => `<button type="button" class="ncard${r.ups === max && max > 0 ? " best" : ""}" data-n="${i}" aria-pressed="${i === sel}">
@@ -1158,11 +1170,12 @@ function sheetHTML(item, out, cfg){
       <span class="ups num">${r.ups}<small>up</small></span>
       <span class="sub">${r.ups ? esc(r.layout) + (r.turned90 ? " · turned 90°" : "") : "Doesn't fit on this sheet"}</span>
       ${r.ups ? `<span class="sub num">${Math.round(r.utilisation*100)}% of the sheet used</span>` : ""}
-      ${r.ups > r.straightUps ? `<span class="gain num">+${r.ups - r.straightUps} vs straight rows (${r.straightUps} up)</span>` : ""}
+      ${r.nestedUps == null && r.ups > r.straightUps ? `<span class="gain num">+${r.ups - r.straightUps} vs straight rows (${r.straightUps} up)</span>` : ""}
+      ${r.nestedUps != null && r.nestedUps > r.ups ? `<span class="sub num lose">${r.nestedUps - r.ups} fewer than nested (${r.nestedUps} up)</span>` : ""}
       ${r.tighterGutter ? `<span class="sub num">${r.tighterGutter.ups} up with a 1/16″ gutter</span>` : ""}
       ${item.gutterKey === "folding_carton" ? (() => {
         const pe = Nesting.pricingEngineUps(item.die.w, item.die.h, Math.min(r.sheet.w, r.sheet.h), Math.max(r.sheet.w, r.sheet.h), r.sheet.press);
-        return `<span class="sub num pe">Pricing Engine: ${pe} up${r.ups > pe ? ` · set <b># of Ups = ${r.ups}</b> to quote the nested layout` : r.ups < pe ? " (check the die: the engine counts rectangles)" : ""}</span>`;
+        return `<span class="sub num pe">Pricing Engine: ${pe} up${r.ups > pe ? ` · set <b># of Ups = ${r.ups}</b> to quote this layout` : r.ups < pe && r.nestedUps == null ? " (check the die: the engine counts rectangles)" : ""}</span>`;
       })() : ""}
       ${r.feedSwitched ? `<span class="sub num" style="color:var(--warn)">Gripper on the ${trimNum(r.gripperEdge, 4)}″ edge (${r.feedSwitched.defaultUps} up on the ${trimNum(r.feedSwitched.defaultEdge, 4)}″ edge)</span>` : ""}
     </button>`).join("");
