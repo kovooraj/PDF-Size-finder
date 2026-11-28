@@ -369,6 +369,11 @@ pre.raw{white-space:pre-wrap;word-break:break-word;background:var(--panel-2);bor
 .vbtn:hover{background:#26262b}
 .vbtn svg{width:17px;height:17px}
 .zoomval{min-width:58px;text-align:center;font-size:13px;color:#b9b9c0}
+.vbtn.vclose{display:inline-flex;align-items:center;gap:6px;background:#fff;color:#111;border-color:#fff;font-weight:650;padding-right:12px}
+.vbtn.vclose svg{width:16px;height:16px}
+.vfab{position:fixed;right:18px;top:74px;z-index:5;width:46px;height:46px;border-radius:50%;border:0;background:#111;color:#fff;display:grid;place-items:center;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.35)}
+.vfab svg{width:22px;height:22px}
+.vfab:hover{transform:scale(1.06)}
 .vstage{flex:1;overflow:auto;cursor:grab;position:relative;background:#fff;touch-action:none}
 .vstage.dragging{cursor:grabbing}
 .vstage .cv{position:relative;margin:0 auto}
@@ -456,8 +461,9 @@ pre.raw{white-space:pre-wrap;word-break:break-word;background:var(--panel-2);bor
     <span class="zoomval num" id="vZoom">100%</span>
     <button class="vbtn" id="vIn" aria-label="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
     <button class="vbtn" id="vFit">Fit</button>
-    <button class="vbtn" id="vClose" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    <button class="vbtn vclose" id="vClose" aria-label="Close the expanded view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>Close</button>
   </div>
+  <button class="vfab" id="vFab" type="button" aria-label="Close the expanded view" title="Close (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
   <div class="vstage" id="vStage"><div class="vhelp">Scroll or pinch to zoom · drag to move · Esc to close</div></div>
 </div>
 
@@ -1402,6 +1408,7 @@ $("#vIn").onclick = () => zoomAt(viewerCanvas.k * 1.4);
 $("#vOut").onclick = () => zoomAt(viewerCanvas.k / 1.4);
 $("#vFit").onclick = () => fitViewer();
 $("#vClose").onclick = closeViewer;
+$("#vFab").onclick = closeViewer;
 $("#vChips").addEventListener("click", onChip);
 let wheelRaf = 0, wheelK = null;
 vStage.addEventListener("wheel", e => {
