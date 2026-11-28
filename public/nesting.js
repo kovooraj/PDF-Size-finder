@@ -21,12 +21,17 @@
   const RES = 32; // bitmap pixels per inch
 
   const DEFAULTS = {
+    // Matched to the BDO Pricing Engine (folding-carton workbook, Printing tabs): offset sheets
+    // lose 0.625" on the short side and 1.5" on the long side, digital 0.625" and 1.25", and
+    // every piece carries 1/16" bleed + 1/16" gutter. In gripper / tail / side / gutter terms
+    // that is gripper + tail 0.75" on the short side, 0.8125" (offset) or 0.6875" (digital)
+    // each side on the long side, and 1/8" between dies.
     sheets: [
-      { id: "o2840", name: "28 × 40", press: "Offset", w: 40, h: 28, gripper: 0.5, tail: 0.375, side: 0.25 },
-      { id: "o2436", name: "24 × 36", press: "Offset", w: 36, h: 24, gripper: 0.5, tail: 0.375, side: 0.25 },
-      { id: "d2081", name: "20.8125 × 29.5", press: "Digital", w: 29.5, h: 20.8125, gripper: 0.375, tail: 0.25, side: 0.25 },
+      { id: "o2840", name: "28 × 40", press: "Offset", w: 40, h: 28, gripper: 0.5, tail: 0.25, side: 0.8125 },
+      { id: "o2436", name: "24 × 36", press: "Offset", w: 36, h: 24, gripper: 0.5, tail: 0.25, side: 0.8125 },
+      { id: "d2081", name: "20.8125 × 29.5", press: "Digital", w: 29.5, h: 20.8125, gripper: 0.5, tail: 0.25, side: 0.6875 },
     ],
-    gutter: { folding_carton: 0.0625, commercial: 0.25 }, // cartons: 1/16" between dies
+    gutter: { folding_carton: 0.125, commercial: 0.25 },
     web: {
       pouch: { web: 30, usable: 29, gapAcross: 0.25, gapAround: 0.125 },
       // unwind: "best" compares both ways; 1/2 = top/bottom off first (label width across the
@@ -378,6 +383,26 @@
     return best.map((p) => ({ x: (p.x * FREE_F) / RES, y: (p.y * FREE_F) / RES, k: p.k }));
   }
 
+  /**
+   * The BDO Pricing Engine's own carton ups (folding-carton workbook, Printing-Offset /
+   * Printing-Digital !B35), ported formula for formula so quotes and this page agree.
+   * Each piece is the flat size + 1/16" bleed + 1/16" gutter. Usable sheet: offset short side
+   * - 0.625", long side - 1.5"; digital short - 0.625", long - 1.25". A straight grid plus one
+   * strip of turned pieces in the leftover, best of both orientations.
+   */
+  function pricingEngineUps(flatL, flatH, sheetShort, sheetLong, press) {
+    const H2 = sheetShort - 0.625, I2 = sheetLong - (press === "Digital" ? 1.25 : 1.5);
+    const a = flatL + 0.125, b = flatH + 0.125, F = Math.floor;
+    if (a <= 0 || b <= 0 || H2 <= 0 || I2 <= 0) return 0;
+    const strip = (cases) => { for (const [ok, v] of cases) if (ok) return v; return 0; };
+    const r1 = I2 - F(I2 / b) * b, r2 = H2 - F(H2 / a) * a, r3 = H2 - F(H2 / b) * b, r4 = I2 - F(I2 / a) * a;
+    const X1 = F(I2 / b) * F(H2 / a) + strip([[a <= r1 && b <= H2, F(H2 / b)], [a <= H2 && b <= r1, F(r1 / b)]]);
+    const X2 = F(I2 / b) * F(H2 / a) + strip([[a <= r2 && b <= I2, F(I2 / b)], [a <= I2 && b <= r2, F(r2 / b)]]);
+    const Y1 = F(H2 / b) * F(I2 / a) + strip([[a <= r3 && b <= I2, F(I2 / b)], [a <= I2 && b <= r3, F(r3 / b)]]);
+    const Y2 = F(H2 / b) * F(I2 / a) + strip([[a <= r4 && b <= H2, F(H2 / b)], [a <= H2 && b <= r4, F(r4 / b)]]);
+    return Math.max(0, X1, X2, Y1, Y2);
+  }
+
   /** Exact rectangle fill, optionally mixing turned pieces into the leftover strip. */
   function nestRect(pw, ph, gutter, usable, allowMix) {
     const fit = (len, n) => (n > len + 1e-9 ? 0 : Math.floor((len + gutter + 1e-9) / (n + gutter)));
@@ -518,7 +543,7 @@
     return opts;
   }
 
-  const api = { RES, DEFAULTS, dieFromOverlay, rectDie, rasterize, rotate, dilate, nestSheets, nestRect, nestWeb, turnSegs, usableOf };
+  const api = { RES, DEFAULTS, pricingEngineUps, dieFromOverlay, rectDie, rasterize, rotate, dilate, nestSheets, nestRect, nestWeb, turnSegs, usableOf };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Nesting = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

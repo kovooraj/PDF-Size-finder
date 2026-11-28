@@ -305,6 +305,7 @@ pre.raw{white-space:pre-wrap;word-break:break-word;background:var(--panel-2);bor
 .unwind .uwb small{font-size:10.5px;color:var(--muted);font-weight:600}
 .unwind .uwb[aria-pressed=true]{color:var(--accent)}
 .ncard .util{font-size:16px;font-weight:700;color:var(--ok);margin:4px 0 2px}
+.ncard .pe{color:var(--ink-2)}.ncard .pe b{font-weight:650}
 .ncard .gain{font-size:12px;font-weight:650;color:var(--ok)}
 .ncard.best .nm::after{content:"Most ups";margin-left:auto;font-size:10.5px;font-weight:700;color:var(--ok);background:var(--ok-soft);border-radius:99px;padding:1px 7px}
 .nest-fig{border:1px solid var(--line);border-radius:12px;background:#fff;padding:14px;color-scheme:light}
@@ -1056,7 +1057,7 @@ function renderTab(){
 }
 
 // ---------- imposition / nesting (maths in nesting.js)
-const NEST_KEY = "dimNestCfg.v2"; // v2: carton gutter default 1/16"
+const NEST_KEY = "dimNestCfg.v3"; // v3: margins and gutter matched to the Pricing Engine
 const clone = o => JSON.parse(JSON.stringify(o));
 function nestCfg(){
   const d = Nesting.DEFAULTS, c = store.get(NEST_KEY, null) || {};
@@ -1140,6 +1141,10 @@ function sheetHTML(item, out, cfg){
       ${r.ups ? `<span class="sub num">${Math.round(r.utilisation*100)}% of the sheet used</span>` : ""}
       ${r.ups > r.straightUps ? `<span class="gain num">+${r.ups - r.straightUps} vs straight rows (${r.straightUps} up)</span>` : ""}
       ${r.tighterGutter ? `<span class="sub num">${r.tighterGutter.ups} up with a 1/16″ gutter</span>` : ""}
+      ${item.gutterKey === "folding_carton" ? (() => {
+        const pe = Nesting.pricingEngineUps(item.die.w, item.die.h, Math.min(r.sheet.w, r.sheet.h), Math.max(r.sheet.w, r.sheet.h), r.sheet.press);
+        return `<span class="sub num pe">Pricing Engine: ${pe} up${r.ups > pe ? ` · set <b># of Ups = ${r.ups}</b> to quote the nested layout` : r.ups < pe ? " (check the die: the engine counts rectangles)" : ""}</span>`;
+      })() : ""}
       ${r.feedSwitched ? `<span class="sub num" style="color:var(--warn)">Gripper on the ${trimNum(r.gripperEdge, 4)}″ edge (${r.feedSwitched.defaultUps} up on the ${trimNum(r.feedSwitched.defaultEdge, 4)}″ edge)</span>` : ""}
     </button>`).join("");
   const r = out[sel], g = cfg.gutter[item.gutterKey];
@@ -1147,6 +1152,7 @@ function sheetHTML(item, out, cfg){
     `Gutter ${fmt(g)} between ${item.gutterKey === "commercial" ? "pieces" : "dies"}; gripper, tail and side margins come off each sheet first${item.gutterKey === "folding_carton" ? ", with the gripper on the long edge" : ""} (change them in Sheets & spacing).`,
     item.die.source === "dieline" && !r.openOutline ? "Nested from the actual dieline outline, so flaps can tuck into each other." :
       item.gutterKey === "folding_carton" ? "Laid out as rectangles (flat size): the dieline outline couldn't be traced, so real nesting may fit more." : "",
+    item.gutterKey === "folding_carton" ? "Margins and gutter match the Pricing Engine. It counts each carton as a rectangle (flat size + 1/8″), so when nesting fits more, set # of Ups in the engine to quote it." : "",
     item.gutterKey === "folding_carton" ? "Check board grain direction before quoting: the best layout may turn the carton 90°." : "",
     "Planning estimate. Prepress confirms the final imposition, die layout and press marks.",
   ].filter(Boolean);

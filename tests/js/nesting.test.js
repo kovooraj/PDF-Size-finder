@@ -33,7 +33,7 @@ test("rectangles: straight grid counts match hand maths", () => {
 
 test("sheet margins: gripper, tail and sides come off the sheet", () => {
   const s = N.DEFAULTS.sheets[0];
-  assert.deepStrictEqual(N.usableOf(s), { w: 40 - 0.5, h: 28 - 0.5 - 0.375 });
+  assert.deepStrictEqual(N.usableOf(s), { w: 40 - 1.625, h: 28 - 0.75 });
 });
 
 test("cartons nest without overlap and never do worse than straight rows", () => {
@@ -82,4 +82,14 @@ test("roll labels: unwind direction fixes which side runs across the web", () =>
   assert.strictEqual(top[0].lanes, 3);
   assert.strictEqual(side[0].lanes, 2);
   assert.ok(Math.abs(top[0].repeat - 5.125) < 1e-9 && Math.abs(side[0].repeat - 3.125) < 1e-9);
+});
+
+test("Pricing Engine ups match the BDO workbook", () => {
+  // the workbook's own sample (26.7 x 14.01 flat on 28 x 40): offset 2 up, digital 1 up
+  assert.strictEqual(N.pricingEngineUps(26.7, 14.01, 28, 40, "Offset"), 2);
+  assert.strictEqual(N.pricingEngineUps(26.7, 14.01, 20.8125, 29.5, "Digital"), 1);
+  // Trader Joe's skewer carton 18.355 x 13.515: 4 up on 28 x 40, and the default margins agree
+  assert.strictEqual(N.pricingEngineUps(18.355, 13.515, 28, 40, "Offset"), 4);
+  const [r] = N.nestSheets(N.rectDie(18.355, 13.515), [N.DEFAULTS.sheets[0]], N.DEFAULTS.gutter.folding_carton, { tryOtherFeed: false, tryTighter: false });
+  assert.strictEqual(r.ups, 4);
 });
